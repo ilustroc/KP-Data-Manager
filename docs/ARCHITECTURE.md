@@ -4,9 +4,9 @@
 
 Fecha de inspección: 2026-10-03.
 
-El directorio `C:\GitHub\KP-Data-Manager` se encuentra vacío y no está inicializado como repositorio Git. No existen todavía una aplicación Laravel, archivos de configuración, migraciones, scripts SQL, ETL, pruebas ni instrucciones locales del repositorio. Por tanto, en esta etapa no hay configuración existente que modificar o preservar.
+La primera inspección encontró el directorio vacío y sin repositorio Git. El 2026-10-03 se incorporó `docs/database-schema.sql`, un snapshot sin datos del DDL real de MySQL 5.7.33, y se completó la Fase 1 sobre Laravel 13.34.0 con PHP objetivo 8.3.35. No se ejecutó ninguna sentencia contra bases productivas.
 
-Este documento define la arquitectura propuesta y el plan por fases. No crea tablas ni asume detalles físicos no confirmados. Antes de escribir migraciones o SQL sobre objetos existentes se debe inspeccionar el servidor con, como mínimo, `SHOW CREATE TABLE`, `SHOW CREATE VIEW`, `SHOW INDEX` y una revisión de volumen/calidad de datos. Las estructuras de `raw_pagos`, `pago_documento_resolucion` e `import_batch` descritas aquí son únicamente las especificaciones funcionales proporcionadas.
+Este documento combina el esquema confirmado por el snapshot con la arquitectura propuesta. El snapshot permite confirmar estructura, pero no sustituye la inspección de datos, conteos, cardinalidad ni planes `EXPLAIN` en el servidor. Todo SQL correctivo se conserva versionado en `database/sql/` y requiere revisión y ejecución manual.
 
 ### Alcance inicial
 
@@ -152,6 +152,8 @@ KP-Data-Manager/
 
 La interfaz se construirá con Blade y componentes reutilizables, salvo que en la Fase 1 aparezca una necesidad real de SPA. Para este sistema administrativo, filtros server-side y polling, Blade reduce complejidad operativa y superficie de ataque.
 
+La Fase 1 confirma Blade + Tailwind CSS 4 como stack de interfaz. Laravel 13 es compatible con PHP 8.3 y su soporte de base de datos incluye MySQL 5.7+. `composer.json` fija la plataforma PHP en 8.3.35 para evitar resolver dependencias incompatibles con producción.
+
 ## 5. Conexiones y acceso a datos
 
 Las credenciales se suministran exclusivamente por `.env`; `.env.example` contiene nombres, nunca secretos. Se configurarán conexiones nombradas:
@@ -163,6 +165,8 @@ Las credenciales se suministran exclusivamente por `.env`; `.env.example` contie
 
 Pueden compartir host, puerto y usuario si la política de privilegios lo admite, pero cada modelo declara explícitamente conexión y tabla. Cuando una consulta necesite cruzar esquemas del mismo servidor, se usará una conexión principal con nombres calificados y parámetros enlazados. No se construyen nombres de esquema a partir de input del usuario.
 
+`mysql_control` es la conexión predeterminada de Laravel: allí se alojarán usuarios, sesiones, cache, jobs y tablas de control. Los tests usan SQLite en memoria únicamente para la Fase 1; las pruebas de integración del SQL heredado deberán ejecutarse contra MySQL 5.7. Las variables de esquema son `DB_BRONZE_DATABASE`, `DB_SILVER_DATABASE`, `DB_CONTROL_DATABASE` y `DB_GOLD_DATABASE`, compartiendo host y una cuenta de aplicación no privilegiada.
+
 Privilegios esperados, sujetos a validación con infraestructura:
 
 - Laravel: `SELECT` en Bronze/Silver; `SELECT/INSERT/UPDATE` únicamente en objetos necesarios de Control; acceso a tablas propias de autenticación; sin `DROP`, `ALTER` ni `GRANT` en runtime.
@@ -171,15 +175,21 @@ Privilegios esperados, sujetos a validación con infraestructura:
 
 ## 6. Objetos de datos
 
-### Objetos confirmados funcionalmente
+### Estructura física confirmada por `docs/database-schema.sql`
 
-| Esquema | Objeto | Uso |
-|---|---|---|
-| `kp_bronze` | `raw_pagos` | Ocho campos originales, metadatos de ingestión y futuro `row_hash`; datos RAW inmutables. |
-| `kp_control` | `pago_documento_resolucion` | Historial de asociaciones, con una resolución activa por pago controlada por la aplicación. |
-| `kp_control` | `import_batch` | Estado, contadores y metadatos de cada carga. |
-| `kp_silver` | `v_pagos_actuales` | Pago con `DOCUMENTO` efectivo. |
-| `kp_silver` | `v_pagos_sin_identificar` | Solo pagos cuyo documento efectivo es `NULL` o vacío después de `TRIM`. |
+**`kp_bronze.raw_pagos`** usa InnoDB/utf8mb4. Conserva exactamente en primer lugar `FECHA DATE`, `DOCUMENTO VARCHAR(30)`, `MONTO DECIMAL(15,2)`, `ACUMULADO DECIMAL(15,2)`, `RECAUDO VARCHAR(50)`, `OPERACION VARCHAR(100)`, `COMENTARIO VARCHAR(260)` y `HORA TIME`, todos nullable. Después contiene `raw_id BIGINT UNSIGNED AUTO_INCREMENT`, `source_file VARCHAR(255)`, `batch_id VARCHAR(100)` e `ingested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`. Su única clave/índice actual es `PRIMARY KEY(raw_id)`. No existe todavía `row_hash` ni índices para los filtros previstos.
+
+**`kp_control.pago_documento_resolucion`** usa InnoDB/utf8mb4. Contiene `id_resolucion BIGINT UNSIGNED AUTO_INCREMENT` como PK; `raw_pago_id BIGINT UNSIGNED NOT NULL`; documentos anterior nullable y nuevo obligatorio en `VARCHAR(30)`; `motivo VARCHAR(260)` nullable; `usuario VARCHAR(100) NOT NULL`; `fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`; y `activo TINYINT(1) NOT NULL DEFAULT 1`. Tiene índices individuales por `raw_pago_id`, `documento_nuevo` y `fecha_modificacion`. No tiene FK, índice compuesto `(raw_pago_id, activo)` ni restricción física que impida dos resoluciones activas.
+
+**`kp_control.import_batch`** usa InnoDB/utf8mb4. Su PK es `batch_id BIGINT UNSIGNED AUTO_INCREMENT`; contiene `tipo`, `origen`, `archivo`, fechas, estado, cuatro contadores unsigned, usuario y mensaje de error. Tiene índices individuales por `tipo`, `estado` y `fecha_inicio`. `fecha_inicio` es obligatorio. No conserva todavía nombre original e interno por separado, tamaño ni SHA-256.
+
+Existe una diferencia deliberada de tipos: `import_batch.batch_id` es `BIGINT UNSIGNED`, mientras `raw_pagos.batch_id` es `VARCHAR(100)`. La primera versión escribirá en Bronze la representación decimal del identificador de Control; no se creará FK entre ambos esquemas ni se cambiará el tipo histórico sin un análisis de datos.
+
+**`kp_silver.v_pagos_actuales`** expone 13 columnas, incluida `DOCUMENTO_ORIGINAL`, y calcula `DOCUMENTO` con `COALESCE(R.documento_nuevo, P.DOCUMENTO)`. Hace `LEFT JOIN` contra resoluciones con `activo = 1`. Es correcta funcionalmente si existe como máximo una resolución activa; con dos activas devolvería dos filas para el mismo pago.
+
+**`kp_silver.v_pagos_sin_identificar`** proyecta las mismas 13 columnas desde `v_pagos_actuales` y filtra correctamente `DOCUMENTO IS NULL OR TRIM(DOCUMENTO) = ''`.
+
+Ambas vistas son `SQL SECURITY DEFINER` y dependen de `DEFINER=jesus_admin@127.0.0.1`. Laravel no usará ese usuario, pero la dependencia del definer es un riesgo operativo y de privilegios. El script pendiente `005_recreate_pago_views_as_invoker.sql` conserva la semántica y cambia las vistas a `SQL SECURITY INVOKER`; antes de aplicarlo se deben otorgar al usuario de aplicación los `SELECT` mínimos sobre los objetos subyacentes.
 
 ### Objeto nuevo requerido
 
@@ -187,15 +197,25 @@ Privilegios esperados, sujetos a validación con infraestructura:
 
 | Campo | Tipo requerido |
 |---|---|
-| `id` | `BIGINT` autoincremental, PK |
-| `batch_id` | `BIGINT` (debe coincidir exactamente con la PK/FK real de `import_batch`) |
-| `numero_fila` | `BIGINT` |
+| `id` | `BIGINT UNSIGNED` autoincremental, PK |
+| `batch_id` | `BIGINT UNSIGNED`, FK a `import_batch.batch_id` |
+| `numero_fila` | `BIGINT UNSIGNED` |
 | `campo` | `VARCHAR(100)` |
 | `valor` | `TEXT` |
 | `error` | `VARCHAR(500)` |
 | `created_at` | `DATETIME` |
 
-Índices requeridos: `batch_id` y `numero_fila`. Se evaluará además `(batch_id, numero_fila)` según los planes reales de consulta. La FK solo se agregará después de comprobar motor, tipo, signo y collation compatibles.
+El snapshot confirma que ambos lados de la FK pueden usar `BIGINT UNSIGNED` e InnoDB. El script `001_create_import_error.sql` propone FK restrictiva, índice compuesto `(batch_id, numero_fila)` y un índice por `numero_fila`.
+
+### DDL versionado pendiente
+
+Ninguno de estos scripts fue ejecutado:
+
+1. `001_create_import_error.sql`: crea el registro de errores y su FK.
+2. `002_extend_import_batch_file_metadata.sql`: agrega nombre original/interno, tamaño y SHA-256 único nullable.
+3. `003_add_raw_pagos_row_hash.sql`: agrega `row_hash` nullable e índice no único; no presupone que el histórico sea único.
+4. `004_add_pago_resolucion_lookup_index.sql`: agrega `(raw_pago_id, activo)` para el join y la transacción de resolución.
+5. `005_recreate_pago_views_as_invoker.sql`: elimina la dependencia de seguridad de `jesus_admin` sin cambiar columnas o lógica.
 
 ### Inspección obligatoria antes del primer DDL
 
@@ -213,7 +233,7 @@ SHOW CREATE VIEW kp_silver.v_pagos_actuales;
 SHOW CREATE VIEW kp_silver.v_pagos_sin_identificar;
 ```
 
-También se revisarán conteos, nulos, duplicados de resoluciones activas, duplicados de hash potencial, collations, engine, tamaños reales y planes `EXPLAIN`. No se ejecutará DDL sobre `raw_pagos` ni se reemplazarán vistas hasta revisar esta evidencia y preparar rollback.
+El snapshot ya confirmó columnas, claves, índices, engine, charset y definiciones de vistas. Todavía se deben revisar en el servidor conteos, nulos, resoluciones activas duplicadas, hashes potenciales, tamaños y planes `EXPLAIN`. No se ejecutará DDL sobre `raw_pagos` ni se reemplazarán vistas hasta completar esa revisión y preparar rollback.
 
 ## 7. Consulta de pagos
 
@@ -278,7 +298,7 @@ La restricción “máximo una activa” se garantiza por servicio transaccional
 2. Validar límite configurable, extensión permitida (`csv`, `xlsx`) y firma/contenido real; no confiar en MIME del navegador.
 3. Generar nombre interno aleatorio y guardar mediante streaming en `storage/app/private/imports/`.
 4. Calcular SHA-256 del archivo mediante streaming.
-5. Registrar nombre original saneado, nombre interno, tamaño y hash. Si los campos no existen en `import_batch`, se propondrá una migración luego de inspeccionar su DDL.
+5. Registrar nombre original saneado, nombre interno, tamaño y hash. Esos campos no existen en el snapshot; están propuestos de forma nullable en `002_extend_import_batch_file_metadata.sql`.
 6. Crear `import_batch` en estado `PENDIENTE` dentro de una operación consistente.
 7. Responder inmediatamente; no abrir ni transformar el archivo en el request.
 
@@ -478,9 +498,11 @@ Cada fase empieza revisando el estado real del repositorio y termina con tests, 
 
 ### FASE 1 — Bootstrap Laravel, DB, autenticación y layout
 
+**Estado: implementada y validada localmente con PHP 8.3.35 (25 tests, 70 aserciones). Pendiente de despliegue y prueba de conexión con la cuenta MySQL de aplicación en el servidor.**
+
 **Crear/modificar**
 
-- Bootstrap estándar de Laravel compatible con PHP 8.3, con versión exacta fijada en `composer.lock` después de validar Composer/plataforma.
+- Bootstrap Laravel 13.34.0 compatible con PHP 8.3, con dependencias fijadas en `composer.lock` y plataforma Composer 8.3.35.
 - `.env.example`, `config/database.php` y configuración de discos privados.
 - Modelos/conexiones base por esquema, sin DDL sobre tablas existentes.
 - Autenticación, migraciones de usuarios/roles de la aplicación y Policies/Gates base.
@@ -624,15 +646,14 @@ Cada fase empieza revisando el estado real del repositorio y termina con tests, 
 
 Estas decisiones no deben inventarse durante el desarrollo:
 
-1. DDL exacto, PK y tipos de `import_batch`; en particular, reconciliar su `batch_id` con `raw_pagos.batch_id VARCHAR(100)` y `import_error.batch_id BIGINT`.
-2. DDL, nombres exactos de columnas, tipos y claves de `pago_documento_resolucion`.
-3. Definición real de ambas vistas Silver y si ya filtran una única resolución activa.
-4. Volumen, distribución, duplicados históricos y calidad de `raw_pagos`.
-5. Semántica de duplicado cuando difieren solo `ACUMULADO` o `COMENTARIO`.
-6. Tratamiento de CSV (delimitadores y encodings reales) y de celdas numéricas Excel con ceros visuales.
-7. Política de retención de archivos y errores.
-8. Si `MOTIVO` es obligatorio también en la identificación inicial; arquitectura recomienda que sí.
-9. Objetivos medibles de rendimiento, ventana de carga y concurrencia esperada.
-10. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
+1. Volumen, distribución, duplicados históricos y calidad de `raw_pagos`.
+2. Existencia de más de una resolución activa por `raw_pago_id`; debe comprobarse antes de confiar en unicidad histórica o plantear una columna generada única.
+3. Semántica de duplicado cuando difieren solo `ACUMULADO` o `COMENTARIO`.
+4. Tratamiento de CSV (delimitadores y encodings reales) y de celdas numéricas Excel con ceros visuales.
+5. Política de retención de archivos y errores.
+6. Si `MOTIVO` es obligatorio también en la identificación inicial; arquitectura recomienda que sí.
+7. Objetivos medibles de rendimiento, ventana de carga y concurrencia esperada.
+8. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
+9. Privilegios definitivos del usuario de aplicación si las vistas se convierten a `SQL SECURITY INVOKER`.
 
-La Fase 1 comienza únicamente después de obtener acceso de solo lectura al esquema para resolver los puntos estructurales. Cualquier cambio DDL se entregará como script revisable con precondiciones, impacto, verificación y rollback; no se aplicará implícitamente desde una request web.
+El snapshot resuelve la estructura física, pero no el estado de los datos ni los planes de ejecución. Cualquier cambio DDL se entrega como script revisable con precondiciones, impacto, verificación y rollback; no se aplica implícitamente desde una request web.
