@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ImportController;
+use App\Http\Controllers\ImportFileController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentCorrectionController;
 use App\Http\Controllers\PaymentDocumentController;
@@ -20,6 +22,22 @@ Route::middleware('guest')->group(function (): void {
 Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::middleware('can:view-data')->prefix('cargas')->name('imports.')->group(function (): void {
+        Route::get('/', [ImportController::class, 'index'])->name('index');
+
+        Route::middleware('can:operate')->group(function (): void {
+            Route::get('/nueva', [ImportController::class, 'create'])->name('create');
+            Route::post('/', [ImportController::class, 'store'])->name('store');
+            Route::get('/{batch_id}/archivo', ImportFileController::class)
+                ->whereNumber('batch_id')
+                ->name('file');
+        });
+
+        Route::get('/{batch_id}', [ImportController::class, 'show'])
+            ->whereNumber('batch_id')
+            ->name('show');
+    });
 
     Route::middleware('can:view-data')->prefix('pagos')->name('payments.')->group(function (): void {
         Route::get('/', [PaymentController::class, 'index'])->name('index');

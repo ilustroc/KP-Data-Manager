@@ -33,13 +33,15 @@
                 <div class="mt-8">
                     <p class="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Cargas</p>
                     <div class="mt-2 flex flex-col gap-1">
-                        <x-sidebar-link disabled badge="Fase 4">
-                            <x-slot:icon>
-                                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4"/></svg>
-                            </x-slot:icon>
-                            Nueva carga
-                        </x-sidebar-link>
-                        <x-sidebar-link disabled badge="Fase 4">
+                        @can('operate')
+                            <x-sidebar-link :href="route('imports.create')" :active="request()->routeIs('imports.create')">
+                                <x-slot:icon>
+                                    <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4"/></svg>
+                                </x-slot:icon>
+                                Nueva carga
+                            </x-sidebar-link>
+                        @endcan
+                        <x-sidebar-link :href="route('imports.index')" :active="request()->routeIs('imports.index', 'imports.show')">
                             <x-slot:icon>
                                 <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 2m6-2a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
                             </x-slot:icon>
