@@ -5,29 +5,10 @@ namespace Tests\Feature\Payments;
 use App\Models\User;
 use App\UserRole;
 use Illuminate\Contracts\Pagination\Paginator;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Tests\TestCase;
 
-class PaymentControllerTest extends TestCase
+class PaymentControllerTest extends PaymentFeatureTestCase
 {
-    use LazilyRefreshDatabase;
-
-    private int $nextPaymentId = 1;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->withoutVite();
-        config(['payments.connection' => 'sqlite']);
-
-        $this->createPaymentViews();
-    }
-
     public function test_unauthenticated_user_cannot_access_payments(): void
     {
         $this->get(route('payments.index'))->assertRedirectToRoute('login');
@@ -259,7 +240,6 @@ class PaymentControllerTest extends TestCase
         $user = User::factory()->readOnly()->create();
         $rawId = $this->createPayment([
             'FECHA' => '2026-10-01',
-            'DOCUMENTO_ORIGINAL' => 'ORIGINAL-HIDDEN',
             'DOCUMENTO' => '00074918',
             'MONTO' => '1250.50',
             'ACUMULADO' => '1450.75',
@@ -287,8 +267,7 @@ class PaymentControllerTest extends TestCase
             ->assertSeeText('Pago confirmado por tesorería.')
             ->assertSeeText('pagos_octubre.csv')
             ->assertSeeText('batch-2026-10')
-            ->assertSeeText('01/10/2026 22:00:00')
-            ->assertDontSeeText('ORIGINAL-HIDDEN')
+            ->assertSeeText('01/10/2026 17:00:00')
             ->assertDontSeeText('Editar')
             ->assertDontSeeText('Identificar');
     }
@@ -355,69 +334,5 @@ class PaymentControllerTest extends TestCase
             '50 filas' => [50],
             '100 filas' => [100],
         ];
-    }
-
-    private function createPaymentViews(): void
-    {
-        DB::connection('sqlite')->statement('DROP VIEW IF EXISTS v_pagos_sin_identificar');
-        DB::connection('sqlite')->statement('DROP VIEW IF EXISTS v_pagos_actuales');
-        Schema::connection('sqlite')->dropIfExists('payment_source');
-
-        Schema::connection('sqlite')->create('payment_source', function (Blueprint $table): void {
-            $table->unsignedBigInteger('raw_id')->primary();
-            $table->date('FECHA')->nullable();
-            $table->string('DOCUMENTO_ORIGINAL', 30)->nullable();
-            $table->string('DOCUMENTO', 30)->nullable();
-            $table->decimal('MONTO', 15, 2)->nullable();
-            $table->decimal('ACUMULADO', 15, 2)->nullable();
-            $table->string('RECAUDO', 50)->nullable();
-            $table->string('OPERACION', 100)->nullable();
-            $table->string('COMENTARIO', 260)->nullable();
-            $table->time('HORA')->nullable();
-            $table->string('source_file')->nullable();
-            $table->string('batch_id', 100)->nullable();
-            $table->dateTime('ingested_at')->nullable();
-        });
-
-        DB::connection('sqlite')->statement(<<<'SQL'
-            CREATE VIEW v_pagos_actuales AS
-            SELECT raw_id, FECHA, DOCUMENTO_ORIGINAL, DOCUMENTO, MONTO, ACUMULADO,
-                   RECAUDO, OPERACION, COMENTARIO, HORA, source_file, batch_id, ingested_at
-            FROM payment_source
-            SQL);
-
-        DB::connection('sqlite')->statement(<<<'SQL'
-            CREATE VIEW v_pagos_sin_identificar AS
-            SELECT raw_id, FECHA, DOCUMENTO_ORIGINAL, DOCUMENTO, MONTO, ACUMULADO,
-                   RECAUDO, OPERACION, COMENTARIO, HORA, source_file, batch_id, ingested_at
-            FROM v_pagos_actuales
-            WHERE DOCUMENTO IS NULL OR TRIM(DOCUMENTO) = ''
-            SQL);
-    }
-
-    /**
-     * @param  array<string, mixed>  $overrides
-     */
-    private function createPayment(array $overrides = []): int
-    {
-        $rawId = $overrides['raw_id'] ?? $this->nextPaymentId++;
-
-        DB::connection('sqlite')->table('payment_source')->insert(array_merge([
-            'raw_id' => $rawId,
-            'FECHA' => '2026-10-01',
-            'DOCUMENTO_ORIGINAL' => '74900018',
-            'DOCUMENTO' => '74900018',
-            'MONTO' => '300.00',
-            'ACUMULADO' => '300.00',
-            'RECAUDO' => 'BCP',
-            'OPERACION' => '0060814',
-            'COMENTARIO' => 'Pago de prueba',
-            'HORA' => '21:05:36',
-            'source_file' => 'payments.csv',
-            'batch_id' => 'batch-test',
-            'ingested_at' => '2026-10-01 22:00:00',
-        ], $overrides));
-
-        return (int) $rawId;
     }
 }

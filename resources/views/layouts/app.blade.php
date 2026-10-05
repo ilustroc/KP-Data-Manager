@@ -63,7 +63,7 @@
                             </x-slot:icon>
                             Sin identificar
                         </x-sidebar-link>
-                        <x-sidebar-link disabled badge="Fase 3">
+                        <x-sidebar-link :href="route('payments.corrections')" :active="request()->routeIs('payments.corrections')">
                             <x-slot:icon>
                                 <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16.9 4.1a2.1 2.1 0 0 1 3 3L9 18l-4 1 1-4L16.9 4.1Z"/></svg>
                             </x-slot:icon>
@@ -107,6 +107,11 @@
             </header>
 
             <main class="p-4 sm:p-6 lg:p-8">
+                @if (session('status'))
+                    <div class="mx-auto mb-5 max-w-[100rem] rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800" role="status">
+                        {{ session('status') }}
+                    </div>
+                @endif
                 @yield('content')
             </main>
         </div>

@@ -2,9 +2,11 @@
 
 namespace App\Services\Payments;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class PaymentQueryService
@@ -56,6 +58,94 @@ class PaymentQueryService
             ->select(self::PAYMENT_COLUMNS)
             ->where('raw_id', $rawId)
             ->first();
+    }
+
+    /**
+     * @return Collection<int, object>
+     */
+    public function history(int $rawId): Collection
+    {
+        return $this->controlConnection()
+            ->table(config('payments.tables.resolutions'))
+            ->select([
+                'id_resolucion',
+                'raw_pago_id',
+                'documento_anterior',
+                'documento_nuevo',
+                'motivo',
+                'usuario',
+                'fecha_modificacion',
+                'activo',
+            ])
+            ->where('raw_pago_id', $rawId)
+            ->orderByDesc('fecha_modificacion')
+            ->orderByDesc('id_resolucion')
+            ->get();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginateCorrections(array $filters): Paginator
+    {
+        $query = $this->controlConnection()
+            ->table(config('payments.tables.resolutions').' as resolution')
+            ->join(
+                config('payments.tables.audit_current').' as payment',
+                'payment.raw_id',
+                '=',
+                'resolution.raw_pago_id',
+            )
+            ->select([
+                'resolution.id_resolucion',
+                'resolution.raw_pago_id',
+                'resolution.fecha_modificacion',
+                'resolution.documento_anterior',
+                'resolution.documento_nuevo',
+                'resolution.usuario',
+                'resolution.motivo',
+                'resolution.activo',
+                'payment.FECHA as fecha_pago',
+                'payment.MONTO',
+                'payment.OPERACION',
+            ]);
+
+        if (filled($filters['fecha_cambio_desde'] ?? null)) {
+            $query->where(
+                'resolution.fecha_modificacion',
+                '>=',
+                $this->displayDateBoundaryInUtc($filters['fecha_cambio_desde']),
+            );
+        }
+
+        if (filled($filters['fecha_cambio_hasta'] ?? null)) {
+            $query->where(
+                'resolution.fecha_modificacion',
+                '<',
+                $this->displayDateBoundaryInUtc($filters['fecha_cambio_hasta'], nextDay: true),
+            );
+        }
+
+        if (filled($filters['documento'] ?? null)) {
+            $query->where(function (Builder $query) use ($filters): void {
+                $query
+                    ->where('resolution.documento_anterior', 'like', $filters['documento'].'%')
+                    ->orWhere('resolution.documento_nuevo', 'like', $filters['documento'].'%');
+            });
+        }
+
+        if (filled($filters['usuario'] ?? null)) {
+            $query->where('resolution.usuario', 'like', $filters['usuario'].'%');
+        }
+
+        if (filled($filters['raw_pago_id'] ?? null)) {
+            $query->where('resolution.raw_pago_id', (int) $filters['raw_pago_id']);
+        }
+
+        return $query
+            ->orderByDesc('resolution.fecha_modificacion')
+            ->orderByDesc('resolution.id_resolucion')
+            ->simplePaginate($this->perPage($filters));
     }
 
     /**
@@ -138,5 +228,25 @@ class PaymentQueryService
     private function connection(): ConnectionInterface
     {
         return DB::connection(config('payments.connection'));
+    }
+
+    private function controlConnection(): ConnectionInterface
+    {
+        return DB::connection(config('payments.control_connection'));
+    }
+
+    private function displayDateBoundaryInUtc(string $date, bool $nextDay = false): string
+    {
+        $boundary = CarbonImmutable::createFromFormat(
+            '!Y-m-d',
+            $date,
+            config('app.display_timezone'),
+        );
+
+        if ($nextDay) {
+            $boundary = $boundary->addDay();
+        }
+
+        return $boundary->utc()->format('Y-m-d H:i:s');
     }
 }

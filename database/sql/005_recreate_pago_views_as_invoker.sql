@@ -1,6 +1,6 @@
 -- KP Data Manager
 -- Compatible con MySQL 5.7.33.
--- Pendiente de revisión y ejecución manual. No fue aplicado a producción.
+-- Definición versionada de las vistas vigentes. No ejecutar automáticamente.
 -- Requiere que el usuario de aplicación tenga SELECT explícito sobre los
 -- objetos subyacentes de kp_bronze y kp_control.
 
@@ -11,7 +11,16 @@ SELECT
     `P`.`raw_id` AS `raw_id`,
     `P`.`FECHA` AS `FECHA`,
     `P`.`DOCUMENTO` AS `DOCUMENTO_ORIGINAL`,
-    COALESCE(`R`.`documento_nuevo`, `P`.`DOCUMENTO`) AS `DOCUMENTO`,
+    (
+        CASE
+            WHEN ISNULL(NULLIF(TRIM(COALESCE(`R`.`documento_nuevo`, `P`.`DOCUMENTO`)), '')) THEN NULL
+            WHEN (
+                (TRIM(COALESCE(`R`.`documento_nuevo`, `P`.`DOCUMENTO`)) REGEXP '^[0-9]+$')
+                AND (CHAR_LENGTH(TRIM(COALESCE(`R`.`documento_nuevo`, `P`.`DOCUMENTO`))) < 8)
+            ) THEN LPAD(TRIM(COALESCE(`R`.`documento_nuevo`, `P`.`DOCUMENTO`)), 8, '0')
+            ELSE TRIM(COALESCE(`R`.`documento_nuevo`, `P`.`DOCUMENTO`))
+        END
+    ) AS `DOCUMENTO`,
     `P`.`MONTO` AS `MONTO`,
     `P`.`ACUMULADO` AS `ACUMULADO`,
     `P`.`RECAUDO` AS `RECAUDO`,

@@ -44,7 +44,7 @@ CREATE TABLE `raw_pagos` (
   `batch_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ingested_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`raw_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -286,7 +286,7 @@ CREATE TABLE `pago_documento_resolucion` (
   KEY `idx_documento_nuevo` (`documento_nuevo`),
   KEY `idx_fecha_modificacion` (`fecha_modificacion`),
   KEY `idx_pago_resolucion_raw_activo` (`raw_pago_id`,`activo`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -846,7 +846,7 @@ USE `kp_silver`;
 /*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`jesus_admin`@`127.0.0.1` SQL SECURITY INVOKER */
-/*!50001 VIEW `v_pagos_actuales` AS select `P`.`raw_id` AS `raw_id`,`P`.`FECHA` AS `FECHA`,`P`.`DOCUMENTO` AS `DOCUMENTO_ORIGINAL`,coalesce(`R`.`documento_nuevo`,`P`.`DOCUMENTO`) AS `DOCUMENTO`,`P`.`MONTO` AS `MONTO`,`P`.`ACUMULADO` AS `ACUMULADO`,`P`.`RECAUDO` AS `RECAUDO`,`P`.`OPERACION` AS `OPERACION`,`P`.`COMENTARIO` AS `COMENTARIO`,`P`.`HORA` AS `HORA`,`P`.`source_file` AS `source_file`,`P`.`batch_id` AS `batch_id`,`P`.`ingested_at` AS `ingested_at` from (`kp_bronze`.`raw_pagos` `P` left join `kp_control`.`pago_documento_resolucion` `R` on(((`R`.`raw_pago_id` = `P`.`raw_id`) and (`R`.`activo` = 1)))) */;
+/*!50001 VIEW `v_pagos_actuales` AS select `P`.`raw_id` AS `raw_id`,`P`.`FECHA` AS `FECHA`,`P`.`DOCUMENTO` AS `DOCUMENTO_ORIGINAL`,(case when isnull(nullif(trim(coalesce(`R`.`documento_nuevo`,`P`.`DOCUMENTO`)),'')) then NULL when ((trim(coalesce(`R`.`documento_nuevo`,`P`.`DOCUMENTO`)) regexp '^[0-9]+$') and (char_length(trim(coalesce(`R`.`documento_nuevo`,`P`.`DOCUMENTO`))) < 8)) then lpad(trim(coalesce(`R`.`documento_nuevo`,`P`.`DOCUMENTO`)),8,'0') else trim(coalesce(`R`.`documento_nuevo`,`P`.`DOCUMENTO`)) end) AS `DOCUMENTO`,`P`.`MONTO` AS `MONTO`,`P`.`ACUMULADO` AS `ACUMULADO`,`P`.`RECAUDO` AS `RECAUDO`,`P`.`OPERACION` AS `OPERACION`,`P`.`COMENTARIO` AS `COMENTARIO`,`P`.`HORA` AS `HORA`,`P`.`source_file` AS `source_file`,`P`.`batch_id` AS `batch_id`,`P`.`ingested_at` AS `ingested_at` from (`kp_bronze`.`raw_pagos` `P` left join `kp_control`.`pago_documento_resolucion` `R` on(((`R`.`raw_pago_id` = `P`.`raw_id`) and (`R`.`activo` = 1)))) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -896,4 +896,4 @@ USE `kpinvest_konnexia`;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-05  1:38:25
+-- Dump completed on 2026-10-05  3:43:39

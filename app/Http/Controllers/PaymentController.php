@@ -34,6 +34,9 @@ class PaymentController extends Controller
 
         abort_if($payment === null, 404);
 
-        return view('payments.show', ['payment' => $payment]);
+        return view('payments.show', [
+            'history' => $payments->history($rawId),
+            'payment' => $payment,
+        ]);
     }
 }

@@ -40,7 +40,16 @@
                         <td class="max-w-sm px-4 py-3 text-slate-600" title="{{ $payment->COMENTARIO }}">{{ filled($payment->COMENTARIO) ? \Illuminate\Support\Str::limit($payment->COMENTARIO, 80) : '—' }}</td>
                         <td class="whitespace-nowrap px-4 py-3 font-mono text-xs">{{ $payment->HORA ? substr((string) $payment->HORA, 0, 8) : '—' }}</td>
                         <td class="whitespace-nowrap px-4 py-3 text-right">
-                            <a href="{{ route('payments.show', $payment->raw_id) }}" class="inline-flex rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-kp-300 hover:bg-kp-50 hover:text-kp-700">Ver</a>
+                            <div class="flex justify-end gap-2">
+                                <a href="{{ route('payments.show', $payment->raw_id) }}" class="inline-flex rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-kp-500 hover:bg-kp-50 hover:text-kp-700">Ver</a>
+                                @can('operate')
+                                    @if ($unidentified || blank($payment->DOCUMENTO))
+                                        <a href="{{ route('payments.identify.create', $payment->raw_id) }}" class="inline-flex rounded-lg bg-kp-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-kp-700">Identificar</a>
+                                    @else
+                                        <a href="{{ route('payments.edit-document', $payment->raw_id) }}" class="inline-flex rounded-lg bg-kp-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-kp-700">Corregir</a>
+                                    @endif
+                                @endcan
+                            </div>
                         </td>
                     </tr>
                 @empty
