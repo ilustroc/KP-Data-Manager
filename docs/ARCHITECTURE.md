@@ -76,7 +76,7 @@ Python ETL (.venv) -> streaming CSV/XLSX -> normalización -> lotes MySQL
 - Reclamo seguro de batches pendientes.
 - Lectura streaming de CSV y XLSX.
 - Validación de encabezados, normalización y validación por fila.
-- Hash lógico SHA-256, deduplicación por lote e inserts masivos.
+- Huella técnica SHA-256 e inserts masivos sin deduplicación automática de pagos.
 - Registro agrupado de errores y actualización periódica de progreso.
 - Logging estructurado sin secretos.
 
@@ -183,7 +183,7 @@ Privilegios esperados, sujetos a validación con infraestructura:
 
 **`kp_control.import_batch`** usa InnoDB/utf8mb4. Su PK es `batch_id BIGINT UNSIGNED AUTO_INCREMENT`; contiene `tipo`, `origen`, `archivo`, fechas, estado, cuatro contadores unsigned, usuario y mensaje de error. Tiene índices individuales por `tipo`, `estado` y `fecha_inicio`. `fecha_inicio` es obligatorio. No conserva todavía nombre original e interno por separado, tamaño ni SHA-256.
 
-Existe una diferencia deliberada de tipos: `import_batch.batch_id` es `BIGINT UNSIGNED`, mientras `raw_pagos.batch_id` es `VARCHAR(100)`. La primera versión escribirá en Bronze la representación decimal del identificador de Control; no se creará FK entre ambos esquemas ni se cambiará el tipo histórico sin un análisis de datos.
+El snapshot conserva una diferencia histórica: `import_batch.batch_id` es `BIGINT UNSIGNED`, mientras `raw_pagos.batch_id` todavía es `VARCHAR(100)`. Como los valores históricos verificados son `NULL`, `007_align_raw_pagos_batch_id.sql` propone convertir la columna Bronze a `BIGINT UNSIGNED NULL` y agregar un índice no único. No se crea foreign key entre esquemas.
 
 **`kp_silver.v_pagos_actuales`** expone 13 columnas, incluida `DOCUMENTO_ORIGINAL`, y calcula `DOCUMENTO` con `COALESCE(R.documento_nuevo, P.DOCUMENTO)`. Hace `LEFT JOIN` contra resoluciones con `activo = 1`. Es correcta funcionalmente si existe como máximo una resolución activa; con dos activas devolvería dos filas para el mismo pago.
 
@@ -306,24 +306,24 @@ Los archivos nunca se sirven con `Storage::url`. Cualquier descarga futura pasar
 
 ### 9.2 Reclamo y ejecución del worker
 
-Un worker Python persistente, administrado por `systemd`/Supervisor, busca batches pendientes. Como MySQL 5.7 no dispone de `SKIP LOCKED`, el reclamo debe usar un patrón compatible y atómico, por ejemplo seleccionar/bloquear un candidato en una transacción corta y cambiarlo a `PROCESANDO` antes de liberar el lock. Se añadirá identidad/heartbeat del worker solo si el esquema real permite esos campos o se aprueba su migración.
+En Fase 5 el worker se ejecuta manualmente con `python -m src.worker --batch-id X`; no existe scheduler, Supervisor, systemd ni invocación automática desde Laravel. El reclamo usa un `UPDATE` condicional y atómico de `PENDIENTE` a `PROCESANDO`, compatible con MySQL 5.7, para impedir que dos procesos reclamen el mismo batch.
 
 1. Cambiar batch a `PROCESANDO` y fijar inicio.
 2. Elegir parser por contenido/extensión validada.
 3. Leer y normalizar encabezados.
-4. Exigir exactamente el conjunto de ocho columnas: `FECHA`, `DOCUMENTO`, `MONTO`, `ACUMULADO`, `RECAUDO`, `OPERACION`, `COMENTARIO`, `HORA`. Se toleran espacios periféricos y diferencias de mayúsculas/minúsculas, no columnas requeridas ausentes ni encabezados ambiguos/duplicados.
-5. Producir filas una a una, normalizarlas y acumular un chunk configurable (`IMPORT_BATCH_SIZE`, default 5000).
+4. Exigir `FECHA`, `MONTO` y `RECAUDO`. `DOCUMENTO`, `ACUMULADO`, `OPERACION`, `COMENTARIO` y `HORA` son opcionales y se representan como `NULL` cuando el encabezado falta. Se toleran espacios periféricos y diferencias de mayúsculas/minúsculas, no encabezados obligatorios ausentes ni encabezados ambiguos/duplicados.
+5. Producir filas una a una, normalizarlas y acumular un chunk configurable (`ETL_INSERT_BATCH_SIZE`, default 5000).
 6. Registrar errores de validación por fila sin truncar silenciosamente.
-7. Deduplicar y ejecutar inserciones masivas por chunk.
+7. Calcular `row_hash` como huella técnica y ejecutar inserciones masivas por chunk sin deduplicar filas.
 8. Actualizar contadores/progreso después de cada chunk confirmado, no por fila.
 9. Finalizar en `COMPLETADO`, `COMPLETADO_CON_ERRORES` o `ERROR`, con fecha final y mensaje sanitizado.
 
-Una caída deja únicamente chunks ya confirmados. La estrategia exacta de reanudación/reintento se definirá al inspeccionar `import_batch`; como mínimo, una nueva ejecución debe ser idempotente gracias a `row_hash` y no duplicar pagos ya confirmados.
+Una caída conserva los chunks ya confirmados, marca el batch `ERROR` y no borra Bronze. Los contadores representan chunks confirmados. El reprocesamiento/rollback futuro podrá localizar filas mediante `batch_id`, pero Fase 5 no intenta ser idempotente por `row_hash` ni permite reprocesar automáticamente un batch terminal.
 
 ### 9.3 Parsing y memoria
 
 - CSV: módulo estándar `csv`, archivo abierto como stream, encoding detectado/validado con una política explícita, límites razonables de campo y número físico de línea preservado.
-- XLSX: `openpyxl.load_workbook(read_only=True, data_only=True)`, iteración `iter_rows(values_only=True)` y cierre garantizado del workbook.
+- XLSX: `openpyxl.load_workbook(read_only=True, data_only=True)`, iteración `iter_rows()` y cierre garantizado del workbook. Se conservan metadatos mínimos de celda para interpretar máscaras inequívocas de ceros.
 - Nunca `pandas.read_excel()` ni estructuras con el archivo completo.
 - El uso de memoria debe ser aproximadamente proporcional a `IMPORT_BATCH_SIZE`, no al número total de filas.
 - Las fórmulas XLSX se leen por su valor cacheado. Si falta valor cacheado, la fila genera un error explícito; el worker no evalúa fórmulas.
@@ -339,7 +339,7 @@ Una caída deja únicamente chunks ya confirmados. La estrategia exacta de reanu
 | `RECAUDO` | String con `trim`, validar longitud contra DDL real. |
 | `OPERACION` | String con `trim`, máximo según DDL; nunca entero; conservar ceros iniciales cuando el origen sea textual. |
 | `COMENTARIO` | String, máximo 260; exceder el máximo genera `import_error`, nunca truncamiento. |
-| `HORA` | Aceptar objeto time/datetime XLSX y `HH:MM:SS`; convertir a `time`. |
+| `HORA` | Aceptar objeto time/datetime XLSX, `HH:MM` y `HH:MM:SS`; convertir a `time`; vacío permanece `NULL`. |
 
 Una celda XLSX almacenada físicamente como número ya perdió su formato textual semántico al llegar al parser. No se inventarán ceros que no estén presentes, excepto cuando un formato Excel inequívoco pueda preservarse de forma probada; se documentará el error/advertencia para incentivar columnas de Documento/Operación como texto.
 
@@ -347,32 +347,30 @@ Una celda XLSX almacenada físicamente como número ya perdió su formato textua
 
 ### Hash lógico
 
-`row_hash` es SHA-256 hexadecimal de una serialización canónica y versionada de:
+`row_hash` es SHA-256 hexadecimal de una serialización canónica y versionada de los ocho valores Bronze normalizados:
 
 - `FECHA`
 - `DOCUMENTO`
 - `MONTO`
+- `ACUMULADO`
 - `RECAUDO`
 - `OPERACION`
+- `COMENTARIO`
 - `HORA`
 
 La serialización debe evitar colisiones por concatenación: campos en orden fijo, representación canónica (`YYYY-MM-DD`, decimal con dos posiciones, `HH:MM:SS`), marcador explícito para `NULL` y longitudes/separadores escapados. La versión del algoritmo queda documentada y cubierta por vectores de prueba.
 
-No se usa `OPERACION` como clave única. `ACUMULADO` y `COMENTARIO` no forman parte del hash según la regla inicial, por lo que dos filas que solo difieran en esos campos se consideran duplicadas; esta semántica debe ser aceptada explícitamente con negocio antes del backfill/índice.
+No se usa `OPERACION` como clave única. Dos filas con el mismo `row_hash` pueden ser pagos reales distintos: la huella sirve para análisis y auditoría futura, no como identidad de negocio.
 
 ### Implantación segura
 
 1. Agregar `row_hash CHAR(64) NULL` sin índice único, después del preflight.
 2. Calcular hashes históricos en lotes pequeños, con seguimiento y posibilidad de pausar.
 3. Analizar grupos repetidos y confirmar la semántica con negocio. No borrar ni modificar filas históricas automáticamente.
-4. Crear inicialmente un índice no único si el histórico contiene duplicados legítimos o todavía no fue saneado.
-5. En ingestión, recolectar hashes del chunk, eliminar repetidos dentro del propio chunk y consultar hashes existentes con consultas `IN` segmentadas que respeten límites de placeholders/paquete.
-6. Insertar las filas nuevas con `executemany`/insert multi-row dentro de la transacción del chunk.
-7. Para cerrar la carrera entre workers, la opción preferida a futuro es un índice único sobre `row_hash` solo si el análisis histórico lo permite. Sin él, se limitará inicialmente a un worker de pagos o se usará staging/serialización del batch.
+4. Crear un índice no único para análisis; no convertirlo en `UNIQUE` ni usarlo para descartar filas.
+5. Insertar todas las filas válidas con `executemany`/insert multi-row dentro de la transacción corta del chunk.
 
-Una tabla staging por batch es la alternativa para el volumen máximo: carga masiva, índice por hash y `INSERT ... SELECT` anti-join. Se adoptará si los benchmarks muestran que la consulta de hashes por chunks no cumple el objetivo operativo.
-
-El SHA-256 del archivo evita reintentos accidentales del mismo archivo a nivel batch; el `row_hash` evita repetir registros entre archivos. Son controles complementarios.
+El SHA-256 del archivo evita registrar accidentalmente el mismo archivo exacto en Fase 4. `row_hash` no evita repeticiones entre archivos y `filas_duplicadas` permanece en cero durante Fase 5.
 
 ## 11. Batches, progreso y errores
 
@@ -589,10 +587,10 @@ Cada fase empieza revisando el estado real del repositorio y termina con tests, 
 
 - `etl/requirements.txt` con versiones fijadas.
 - `.venv` local/servidor creado con Python 3 e ignorado por Git.
-- `etl/src/config.py`, `db.py`, `logging_config.py`, `worker.py`.
+- `etl/src/config.py`, `db.py`, `worker.py`, dominio, parsers y loaders.
 - Parsers y loaders de la estructura propuesta.
 - Tests pytest y fixtures pequeños/generadores.
-- Script revisado para `row_hash` nullable y sus índices; backfill como operación separada y reanudable.
+- Script revisado para `row_hash` nullable con índice no único y script de alineación numérica de `batch_id`; ambos quedan pendientes de ejecución manual.
 
 **Tests/puerta**
 
@@ -600,7 +598,7 @@ Cada fase empieza revisando el estado real del repositorio y termina con tests, 
 - Comentario >260 genera `import_error` sin truncar.
 - Operación/documento preservan ceros iniciales.
 - CSV/XLSX se leen en streaming y un archivo grande atraviesa varios chunks.
-- Inserción por lotes, conteos correctos y duplicados no insertados.
+- Inserción por lotes, conteos correctos y `filas_duplicadas = 0` sin descartar coincidencias de `row_hash`.
 - Memoria acotada y compatibilidad MySQL 5.7.
 - No continuar si se usa carga completa, insert por fila o aritmética `float`.
 

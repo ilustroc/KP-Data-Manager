@@ -41,10 +41,13 @@ CREATE TABLE `raw_pagos` (
   `HORA` time DEFAULT NULL,
   `raw_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `source_file` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `batch_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `batch_id` bigint(20) unsigned DEFAULT NULL,
   `ingested_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`raw_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `row_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  PRIMARY KEY (`raw_id`),
+  KEY `idx_raw_pagos_row_hash` (`row_hash`),
+  KEY `idx_raw_pagos_batch_id` (`batch_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -192,6 +195,13 @@ CREATE TABLE `import_batch` (
   `tipo` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `origen` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `archivo` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `archivo_original` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `archivo_interno` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `archivo_ruta` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `archivo_extension` varchar(20) CHARACTER SET ascii DEFAULT NULL,
+  `archivo_mime` varchar(150) CHARACTER SET ascii DEFAULT NULL,
+  `archivo_tamano` bigint(20) unsigned DEFAULT NULL,
+  `archivo_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `fecha_inicio` datetime NOT NULL,
   `fecha_fin` datetime DEFAULT NULL,
   `estado` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -204,7 +214,32 @@ CREATE TABLE `import_batch` (
   PRIMARY KEY (`batch_id`),
   KEY `idx_tipo` (`tipo`),
   KEY `idx_estado` (`estado`),
-  KEY `idx_fecha_inicio` (`fecha_inicio`)
+  KEY `idx_fecha_inicio` (`fecha_inicio`),
+  KEY `idx_import_batch_origen` (`origen`),
+  KEY `idx_import_batch_usuario` (`usuario`),
+  KEY `idx_import_batch_archivo_sha256` (`archivo_sha256`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `import_error`
+--
+
+DROP TABLE IF EXISTS `import_error`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `import_error` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `numero_fila` bigint(20) unsigned NOT NULL,
+  `campo` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `valor` text COLLATE utf8mb4_unicode_ci,
+  `error` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_import_error_batch_row` (`batch_id`,`numero_fila`),
+  KEY `idx_import_error_numero_fila` (`numero_fila`),
+  CONSTRAINT `fk_import_error_batch` FOREIGN KEY (`batch_id`) REFERENCES `import_batch` (`batch_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -896,4 +931,4 @@ USE `kpinvest_konnexia`;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-05  3:43:39
+-- Dump completed on 2026-10-05  7:19:09
