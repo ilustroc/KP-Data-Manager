@@ -51,13 +51,13 @@
                 <div class="mt-8">
                     <p class="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Pagos</p>
                     <div class="mt-2 flex flex-col gap-1">
-                        <x-sidebar-link disabled badge="Fase 2">
+                        <x-sidebar-link :href="route('payments.index')" :active="request()->routeIs('payments.index')">
                             <x-slot:icon>
                                 <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h10"/></svg>
                             </x-slot:icon>
                             Todos
                         </x-sidebar-link>
-                        <x-sidebar-link disabled badge="Fase 2">
+                        <x-sidebar-link :href="route('payments.unidentified')" :active="request()->routeIs('payments.unidentified')">
                             <x-slot:icon>
                                 <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v5m0 3h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/></svg>
                             </x-slot:icon>
