@@ -1,6 +1,6 @@
-# KP Data Manager ETL — Fase 5
+# KP Data Manager ETL
 
-Motor CLI para procesar batches `PENDIENTE` de tipo `PAGOS` hacia `kp_bronze.raw_pagos`. Esta fase no incluye scheduler, Supervisor, systemd ni ejecución desde Laravel.
+Motor CLI para procesar batches `PENDIENTE` de tipo `PAGOS` hacia `kp_bronze.raw_pagos`. El CLI continúa siendo independiente; Fase 6 permite invocarlo desde un Queue Job de Laravel sin compartir las credenciales MySQL de ambas aplicaciones.
 
 ## Runtime
 
@@ -81,6 +81,31 @@ En Windows:
 ```
 
 El argumento es únicamente el identificador numérico. La ruta se obtiene de `import_batch`; el CLI no acepta rutas de archivos.
+
+## Integración con la cola de Laravel
+
+Laravel solo encola el identificador del batch. El Job ejecuta el mismo módulo CLI con una lista estructurada de argumentos; no procesa filas ni lee `etl/.env`. Python carga sus propias credenciales desde ese archivo.
+
+Configurar en el `.env` de Laravel, sin incluir credenciales ETL:
+
+```dotenv
+ETL_ENABLED=true
+ETL_PYTHON_BINARY=C:\ruta\al\proyecto\etl\.venv\Scripts\python.exe
+ETL_WORKDIR=C:\ruta\al\proyecto\etl
+ETL_PROCESS_TIMEOUT_SECONDS=3600
+ETL_QUEUE=etl
+DB_QUEUE_RETRY_AFTER=3660
+```
+
+En Linux futuro, `ETL_PYTHON_BINARY` podrá apuntar al Python aislado, por ejemplo `/opt/kp-data-etl/.venv/bin/python`. Fase 6 no instala ni configura ese runtime en el VPS.
+
+Iniciar el worker local desde la raíz Laravel:
+
+```bash
+php artisan queue:work --queue=etl
+```
+
+`DB_QUEUE_RETRY_AFTER` debe superar el timeout máximo del Job para impedir una segunda reserva mientras el proceso sigue activo. `ETL_PROCESS_TIMEOUT_SECONDS=0` desactiva el timeout del proceso, pero exige configurar `DB_QUEUE_RETRY_AFTER` por encima de la duración máxima operacional esperada.
 
 ## Flujo del batch
 

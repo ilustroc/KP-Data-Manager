@@ -6,8 +6,8 @@
 @section('content')
     <div class="mx-auto max-w-4xl">
         <div class="mb-6">
-            <h2 class="text-2xl font-semibold tracking-tight text-slate-950">Registrar archivo</h2>
-            <p class="mt-1 text-sm text-slate-600">El archivo quedará resguardado y pendiente de procesamiento. En esta fase no se importan filas.</p>
+            <h2 class="text-2xl font-semibold tracking-tight text-slate-950">Cargar archivo</h2>
+            <p class="mt-1 text-sm text-slate-600">Selecciona el archivo que deseas cargar. El sistema lo validará y procesará automáticamente.</p>
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
@@ -52,7 +52,7 @@
                 </label>
 
                 <div class="flex flex-wrap gap-3 border-t border-slate-100 pt-5">
-                    <button type="submit" class="rounded-lg bg-kp-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-kp-700">Registrar carga</button>
+                    <button type="submit" class="rounded-lg bg-kp-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-kp-700">Cargar y procesar</button>
                     <a href="{{ route('imports.index') }}" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancelar</a>
                 </div>
             </form>

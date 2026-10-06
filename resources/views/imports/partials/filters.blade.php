@@ -12,7 +12,7 @@
 <form method="GET" action="{{ route('imports.index') }}" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <label class="block text-sm font-medium text-slate-700">
-            Batch
+            N.º de carga
             <input type="number" name="batch_id" min="1" value="{{ old('batch_id', $filters['batch_id'] ?? '') }}" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
         </label>
 

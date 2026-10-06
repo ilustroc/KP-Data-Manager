@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 from zipfile import BadZipFile
 
 from openpyxl import load_workbook
@@ -37,9 +37,10 @@ class XlsxPaymentParser:
 
             for cells in row_iterator:
                 source_values = {
-                    column: CellValue(
-                        cells[index].value if index < len(cells) else None,
-                        cells[index].number_format if index < len(cells) else None,
+                    column: (
+                        self._cell_value(cells[index])
+                        if index < len(cells)
+                        else CellValue(None)
                     )
                     for column, index in header_map.items()
                 }
@@ -50,3 +51,13 @@ class XlsxPaymentParser:
                 yield SourceRow(number=cells[0].row, values=source_values)
         finally:
             workbook.close()
+
+    @staticmethod
+    def _cell_value(cell: Any) -> CellValue:
+        value = cell.value
+
+        return CellValue(
+            value=value,
+            number_format=cell.number_format,
+            is_xlsx_float=isinstance(value, float),
+        )

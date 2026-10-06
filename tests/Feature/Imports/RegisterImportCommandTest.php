@@ -3,13 +3,16 @@
 namespace Tests\Feature\Imports;
 
 use App\ImportStatus;
+use App\Jobs\ProcessImportBatch;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 class RegisterImportCommandTest extends ImportFeatureTestCase
 {
     public function test_cli_registers_and_moves_file_from_configured_inbox(): void
     {
+        Queue::fake([ProcessImportBatch::class]);
         Storage::fake('imports');
         Storage::fake('inbox');
         config(['imports.inbox_path' => Storage::disk('inbox')->path('')]);
@@ -28,6 +31,7 @@ class RegisterImportCommandTest extends ImportFeatureTestCase
         $this->assertStringStartsWith('cli:', $batch->usuario);
         Storage::disk('imports')->assertExists($batch->archivo_ruta);
         Storage::disk('inbox')->assertMissing('pagos_2024.csv');
+        Queue::assertNothingPushed();
     }
 
     public function test_cli_rejects_path_traversal(): void

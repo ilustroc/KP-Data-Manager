@@ -22,7 +22,7 @@
                 <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
                     <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
-                            <th class="px-4 py-3">Batch</th>
+                            <th class="px-4 py-3">Carga</th>
                             <th class="px-4 py-3">Tipo</th>
                             <th class="px-4 py-3">Origen</th>
                             <th class="px-4 py-3">Archivo</th>

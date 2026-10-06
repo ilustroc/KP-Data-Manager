@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\ImportFileController;
+use App\Http\Controllers\ImportProcessController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentCorrectionController;
 use App\Http\Controllers\PaymentDocumentController;
@@ -29,6 +30,9 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::middleware('can:operate')->group(function (): void {
             Route::get('/nueva', [ImportController::class, 'create'])->name('create');
             Route::post('/', [ImportController::class, 'store'])->name('store');
+            Route::post('/{batch_id}/procesar', ImportProcessController::class)
+                ->whereNumber('batch_id')
+                ->name('process');
             Route::get('/{batch_id}/archivo', ImportFileController::class)
                 ->whereNumber('batch_id')
                 ->name('file');

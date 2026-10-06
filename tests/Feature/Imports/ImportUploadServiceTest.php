@@ -5,9 +5,11 @@ namespace Tests\Feature\Imports;
 use App\ImportOrigin;
 use App\ImportStatus;
 use App\ImportType;
+use App\Jobs\ProcessImportBatch;
 use App\Models\User;
 use App\Services\Imports\ImportFileService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -15,6 +17,7 @@ class ImportUploadServiceTest extends ImportFeatureTestCase
 {
     public function test_filesystem_failure_marks_created_batch_as_error(): void
     {
+        Queue::fake([ProcessImportBatch::class]);
         Storage::fake('imports');
         $this->partialMock(ImportFileService::class, function ($mock): void {
             $mock->shouldReceive('storeFromPath')
@@ -36,10 +39,12 @@ class ImportUploadServiceTest extends ImportFeatureTestCase
         $this->assertSame(ImportStatus::Error->value, $batch->estado);
         $this->assertNotNull($batch->mensaje_error);
         $this->assertSame([], Storage::disk('imports')->allFiles());
+        Queue::assertNothingPushed();
     }
 
     public function test_database_failure_after_storage_does_not_leave_orphan_file(): void
     {
+        Queue::fake([ProcessImportBatch::class]);
         Storage::fake('imports');
         DB::connection('sqlite')->unprepared(<<<'SQL'
             CREATE TRIGGER fail_pending_import
@@ -63,6 +68,7 @@ class ImportUploadServiceTest extends ImportFeatureTestCase
         $batch = DB::connection('sqlite')->table('import_batch')->firstOrFail();
         $this->assertSame(ImportStatus::Error->value, $batch->estado);
         $this->assertSame([], Storage::disk('imports')->allFiles());
+        Queue::assertNothingPushed();
     }
 
     public function test_hashing_and_private_storage_use_stream_resources(): void

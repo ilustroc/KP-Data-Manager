@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import openpyxl
 
-from src.domain.normalizers import cell_to_text
+from src.domain.normalizers import cell_to_text, normalize_money
 from src.parsers.xlsx_parser import XlsxPaymentParser
 
 
@@ -37,3 +38,23 @@ def test_xlsx_uses_read_only_data_only_and_preserves_visible_zero_format(
     assert captured["data_only"] is True
     assert cell_to_text(row.values["DOCUMENTO"]) == "00003241"
     assert cell_to_text(row.values["OPERACION"]) == "0060814"
+
+
+def test_xlsx_numeric_money_cells_are_marked_for_binary_float_tolerance(tmp_path: Path) -> None:
+    path = tmp_path / "pagos-float.xlsx"
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.append(["FECHA", "MONTO", "ACUMULADO", "RECAUDO"])
+    worksheet.append(
+        ["2026-10-01", 216791.33000000002, 1000.1200000000001, "BCP"]
+    )
+    workbook.save(path)
+
+    row = next(XlsxPaymentParser().rows(path))
+
+    assert row.values["MONTO"].is_xlsx_float is True
+    assert row.values["ACUMULADO"].is_xlsx_float is True
+    assert normalize_money(row.values["MONTO"]) == Decimal("216791.33")
+    assert normalize_money(row.values["ACUMULADO"], field_label="Acumulado") == Decimal(
+        "1000.12"
+    )

@@ -22,6 +22,7 @@ class BatchRecord:
 class CellValue:
     value: Any
     number_format: str | None = None
+    is_xlsx_float: bool = False
 
 
 @dataclass(frozen=True, slots=True)

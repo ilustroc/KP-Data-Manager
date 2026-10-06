@@ -8,7 +8,10 @@ use App\ImportOrigin;
 use App\ImportStatus;
 use App\ImportType;
 use App\Services\Imports\DuplicateImportFile;
+use App\Services\Imports\ImportBatchDispatcher;
+use App\Services\Imports\ImportBatchProcessingService;
 use App\Services\Imports\ImportBatchQueryService;
+use App\Services\Imports\ImportDispatchFailed;
 use App\Services\Imports\ImportFileService;
 use App\Services\Imports\ImportRegistrationFailed;
 use App\Services\Imports\ImportUploadService;
@@ -40,8 +43,12 @@ class ImportController extends Controller
         ]);
     }
 
-    public function store(StoreImportRequest $request, ImportUploadService $uploads): RedirectResponse
-    {
+    public function store(
+        StoreImportRequest $request,
+        ImportUploadService $uploads,
+        ImportBatchProcessingService $processing,
+        ImportBatchDispatcher $dispatcher,
+    ): RedirectResponse {
         $validated = $request->validated();
 
         try {
@@ -57,9 +64,23 @@ class ImportController extends Controller
             ]);
         }
 
+        if ($processing->status($batchId) !== ImportStatus::Pending) {
+            return redirect()
+                ->route('imports.show', $batchId)
+                ->with('warning', "La carga #{$batchId} fue registrada, pero no pudo enviarse a procesamiento.");
+        }
+
+        try {
+            $dispatcher->dispatch($batchId);
+        } catch (ImportDispatchFailed) {
+            return redirect()
+                ->route('imports.show', $batchId)
+                ->with('warning', "La carga #{$batchId} fue registrada, pero no fue posible enviarla a procesamiento.");
+        }
+
         return redirect()
             ->route('imports.show', $batchId)
-            ->with('status', "La carga #{$batchId} fue registrada y está pendiente de procesamiento.");
+            ->with('status', "La carga #{$batchId} fue registrada y enviada a procesamiento.");
     }
 
     public function show(

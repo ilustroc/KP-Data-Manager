@@ -114,6 +114,11 @@
                         {{ session('status') }}
                     </div>
                 @endif
+                @if (session('warning'))
+                    <div class="mx-auto mb-5 max-w-[100rem] rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900" role="status">
+                        {{ session('warning') }}
+                    </div>
+                @endif
                 @yield('content')
             </main>
         </div>

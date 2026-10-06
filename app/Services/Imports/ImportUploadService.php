@@ -154,7 +154,7 @@ class ImportUploadService
             );
 
             if ($updated !== 1) {
-                throw new ImportRegistrationFailed('No se pudo finalizar el registro del batch.');
+                throw new ImportRegistrationFailed('No se pudo finalizar el registro de la carga.');
             }
 
             if ($removeSourceAfterRegistration && ! unlink($sourcePath)) {
@@ -191,7 +191,7 @@ class ImportUploadService
             ]);
 
             throw new ImportRegistrationFailed(
-                'No se pudo almacenar y registrar el archivo. El batch quedó marcado con error.',
+                'No se pudo almacenar y registrar el archivo. La carga quedó marcada con error.',
                 previous: $exception,
             );
         }

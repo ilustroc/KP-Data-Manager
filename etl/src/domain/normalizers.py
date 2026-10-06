@@ -12,6 +12,9 @@ from .models import CellValue, PaymentRecord, RowError, SourceRow
 MONEY_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
 ZERO_NUMBER_FORMAT_PATTERN = re.compile(r"^0+$")
 TWO_DECIMALS = Decimal("0.01")
+# XLSX numeric cells are IEEE-754 floats; one billionth isolates representation noise
+# while remaining far below the smallest genuine third decimal (0.001).
+XLSX_FLOAT_MONEY_TOLERANCE = Decimal("0.000000001")
 MAX_DECIMAL_15_2 = Decimal("9999999999999.99")
 
 
@@ -100,7 +103,11 @@ def normalize_money(
         quantized = value.quantize(TWO_DECIMALS)
     except InvalidOperation as exception:
         raise FieldNormalizationError(f"{field_label} inválido") from exception
-    if value != quantized:
+    difference = abs(value - quantized)
+    is_acceptable_xlsx_float_noise = (
+        cell.is_xlsx_float and difference <= XLSX_FLOAT_MONEY_TOLERANCE
+    )
+    if value != quantized and not is_acceptable_xlsx_float_noise:
         raise FieldNormalizationError(f"{field_label} admite como máximo dos decimales")
     if abs(quantized) > MAX_DECIMAL_15_2:
         raise FieldNormalizationError(f"{field_label} excede DECIMAL(15,2)")
