@@ -14,10 +14,12 @@ class PaymentCorrectionControllerTest extends PaymentFeatureTestCase
 
     public function test_read_only_user_can_view_corrections(): void
     {
+        $auditor = User::factory()->create(['name' => 'Jesús Gabriel Garcia Palacios']);
         $rawId = $this->createPayment(['DOCUMENTO' => null, 'OPERACION' => '0093273']);
         $this->createResolution($rawId, [
             'documento_nuevo' => '3241',
             'motivo' => 'Identificación inicial',
+            'usuario' => 'user:'.$auditor->id,
         ]);
         $user = User::factory()->readOnly()->create();
 
@@ -27,7 +29,11 @@ class PaymentCorrectionControllerTest extends PaymentFeatureTestCase
             ->assertViewIs('payments.corrections')
             ->assertSeeText('Identificación inicial')
             ->assertSeeText('3241')
-            ->assertSeeText('0093273');
+            ->assertSeeText('0093273')
+            ->assertSeeText('Jesús Gabriel Garcia Palacios')
+            ->assertDontSeeText('user:'.$auditor->id)
+            ->assertDontSeeText('Raw ID')
+            ->assertSee('placeholder="Buscar por nombre"', false);
     }
 
     public function test_corrections_are_ordered_by_change_date_descending(): void
@@ -51,6 +57,8 @@ class PaymentCorrectionControllerTest extends PaymentFeatureTestCase
 
     public function test_corrections_filters_execute_in_sql(): void
     {
+        $matchingAuditor = User::factory()->create(['name' => 'Jesús Gabriel Garcia Palacios']);
+        $otherAuditor = User::factory()->create(['name' => 'María Operadora']);
         $matchingPaymentId = $this->createPayment([
             'FECHA' => '2026-12-10',
             'DOCUMENTO' => null,
@@ -63,13 +71,13 @@ class PaymentCorrectionControllerTest extends PaymentFeatureTestCase
         $this->createResolution($matchingPaymentId, [
             'documento_anterior' => '1000',
             'documento_nuevo' => '2000',
-            'usuario' => 'user:77',
+            'usuario' => 'user:'.$matchingAuditor->id,
             'motivo' => 'MATCHING-CORRECTION',
             'fecha_modificacion' => '2026-12-20 14:20:00',
         ]);
         $this->createResolution($otherPaymentId, [
             'documento_nuevo' => '9999',
-            'usuario' => 'user:88',
+            'usuario' => 'user:'.$otherAuditor->id,
             'motivo' => 'OTHER-CORRECTION',
             'fecha_modificacion' => '2026-12-01 09:00:00',
         ]);
@@ -79,8 +87,7 @@ class PaymentCorrectionControllerTest extends PaymentFeatureTestCase
             'fecha_cambio_desde' => '2026-12-15',
             'fecha_cambio_hasta' => '2026-12-31',
             'documento' => '2000',
-            'usuario' => 'user:77',
-            'raw_pago_id' => $matchingPaymentId,
+            'usuario' => 'Jesús',
         ]));
 
         $response

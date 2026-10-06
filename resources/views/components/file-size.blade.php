@@ -12,6 +12,10 @@
     }
 
     $decimals = $unitIndex === 0 ? 0 : 2;
+    $formattedSize = number_format($displaySize, $decimals, '.', ',');
+    if ($decimals > 0) {
+        $formattedSize = rtrim(rtrim($formattedSize, '0'), '.');
+    }
 @endphp
 
-{{ $size === null ? '—' : number_format($displaySize, $decimals, '.', ',').' '.$units[$unitIndex] }}
+{{ $size === null ? '—' : $formattedSize.' '.$units[$unitIndex] }}

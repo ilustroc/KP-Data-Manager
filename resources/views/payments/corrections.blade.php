@@ -12,7 +12,7 @@
 
         @include('payments.partials.correction-filters', ['filters' => $filters])
 
-        <div class="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="kp-panel mt-6 overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
                     <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -36,8 +36,8 @@
                                 <td class="whitespace-nowrap px-4 py-3 font-mono font-medium text-slate-900">{{ $correction->documento_nuevo }}</td>
                                 <td class="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-900">{{ $correction->MONTO !== null ? 'S/ '.number_format((float) $correction->MONTO, 2, '.', ',') : '—' }}</td>
                                 <td class="whitespace-nowrap px-4 py-3 font-mono">{{ filled($correction->OPERACION) ? $correction->OPERACION : '—' }}</td>
-                                <td class="whitespace-nowrap px-4 py-3 font-mono text-xs">{{ $correction->usuario }}</td>
-                                <td class="max-w-lg whitespace-pre-wrap break-words px-4 py-3">{{ filled($correction->motivo) ? $correction->motivo : '—' }}</td>
+                                <td class="max-w-52 px-4 py-3 text-sm font-medium text-slate-800"><span class="line-clamp-2" title="{{ $correction->usuario_nombre }}">{{ $correction->usuario_nombre }}</span></td>
+                                <td class="max-w-sm whitespace-pre-wrap break-words px-4 py-3 leading-5">{{ filled($correction->motivo) ? $correction->motivo : '—' }}</td>
                             </tr>
                         @empty
                             <tr>

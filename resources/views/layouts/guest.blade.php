@@ -5,35 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Acceso') · {{ config('app.name') }}</title>
+    <link rel="icon" type="image/png" href="{{ asset('assets/brand/kp-invest-mark.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body>
-    <main class="grid min-h-screen bg-slate-100 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,40rem)]">
-        <section class="hidden bg-sidebar p-12 text-white lg:flex lg:flex-col lg:justify-between">
-            <div class="flex items-center gap-3">
-                <div class="grid size-11 place-items-center rounded-xl bg-kp-500 text-sm font-black">KP</div>
-                <div>
-                    <p class="font-semibold">KP INVEST</p>
-                    <p class="text-sm text-slate-400">Gestión interna de datos</p>
-                </div>
+<body class="bg-[#f3f6f8]">
+<main class="flex min-h-screen items-center justify-center p-5">
+    <div class="grid w-full max-w-[80rem] overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(6,27,69,0.08)] lg:h-[600px] lg:grid-cols-[1.08fr_.92fr]">
+        <section class="relative hidden p-8 lg:flex lg:flex-col">
+            <img src="{{ asset('assets/brand/kp-invest-logo.png') }}" alt="KP Invest" class="h-10 w-auto self-start">
+            <div class="flex flex-1 flex-col items-center justify-center text-center">
+                <img src="{{ asset('assets/brand/login-illustration.png') }}" alt="Persona gestionando información desde una computadora" class="max-h-[18rem] max-w-[70%] object-contain">
+                <h1 class="mt-6 text-lg font-semibold text-brand-blue">Bienvenido a KP Invest</h1>
+                <p class="mt-2 text-sm text-slate-500">Plataforma de KP Invest · Data Management</p>
             </div>
-            <div class="max-w-xl">
-                <p class="text-sm font-semibold uppercase tracking-[0.18em] text-blue-300">KP Data Manager</p>
-                <h1 class="mt-4 text-4xl font-semibold leading-tight tracking-tight">Datos confiables, trazables y listos para operar.</h1>
-                <p class="mt-5 max-w-lg text-base leading-7 text-slate-400">Plataforma interna para controlar cargas, pagos y correcciones con auditoría completa.</p>
-            </div>
-            <p class="text-xs text-slate-500">Acceso exclusivo para personal autorizado.</p>
+            <p class="text-xs text-slate-400">© {{ now()->year }} KP Invest · Acceso exclusivo para personal autorizado.</p>
         </section>
-
-        <section class="flex items-center justify-center p-6 sm:p-10">
-            <div class="w-full max-w-md">
-                <div class="mb-8 flex items-center gap-3 lg:hidden">
-                    <div class="grid size-10 place-items-center rounded-xl bg-kp-600 text-sm font-black text-white">KP</div>
-                    <p class="font-semibold text-slate-900">KP Data Manager</p>
-                </div>
-                @yield('content')
-            </div>
+        <section class="flex min-h-screen items-center justify-center px-8 py-7 lg:min-h-0 lg:border-l lg:border-slate-100 lg:bg-slate-50/30">
+            <div class="w-full max-w-[520px]">@yield('content')</div>
         </section>
-    </main>
+    </div>
+</main>
 </body>
 </html>

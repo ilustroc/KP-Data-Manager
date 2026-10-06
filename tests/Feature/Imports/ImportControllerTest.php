@@ -199,12 +199,12 @@ class ImportControllerTest extends ImportFeatureTestCase
 
     public function test_history_filters_are_applied_in_sql(): void
     {
-        $user = User::factory()->readOnly()->create();
+        $user = User::factory()->readOnly()->create(['name' => 'Jesús Gabriel Garcia Palacios']);
         $targetBatchId = $this->createBatch([
             'origen' => ImportOrigin::Historical->value,
             'estado' => ImportStatus::Error->value,
             'archivo_original' => 'objetivo.csv',
-            'usuario' => 'user:42',
+            'usuario' => 'user:'.$user->id,
             'fecha_inicio' => '2026-10-05 03:00:00',
         ]);
         $this->createBatch(['archivo_original' => 'otro.csv']);
@@ -217,17 +217,33 @@ class ImportControllerTest extends ImportFeatureTestCase
             'fecha_desde' => '2026-10-04',
             'fecha_hasta' => '2026-10-04',
             'nombre_archivo' => 'objetivo',
-            'usuario' => 'user:42',
+            'usuario' => 'Jesús',
         ]))
             ->assertSeeText('objetivo.csv')
+            ->assertSeeText('Jesús Gabriel Garcia Palacios')
+            ->assertDontSeeText('user:'.$user->id)
             ->assertDontSeeText('otro.csv');
+    }
+
+    public function test_history_presents_cli_actor_as_system(): void
+    {
+        $user = User::factory()->readOnly()->create();
+        $this->createBatch([
+            'archivo_original' => 'historico.csv',
+            'usuario' => 'cli:PC',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('imports.index'))
+            ->assertSeeText('Sistema')
+            ->assertDontSeeText('cli:PC');
     }
 
     public function test_existing_batch_detail_includes_errors_and_lima_time(): void
     {
         Storage::fake('imports');
-        $user = User::factory()->readOnly()->create();
-        $batchId = $this->createBatch();
+        $user = User::factory()->readOnly()->create(['name' => 'Jesús Gabriel Garcia Palacios']);
+        $batchId = $this->createBatch(['usuario' => 'user:'.$user->id]);
         Storage::disk('imports')->put('2026/10/1/internal.csv', 'contents');
         DB::connection('sqlite')->table('import_error')->insert([
             'batch_id' => $batchId,
@@ -243,7 +259,9 @@ class ImportControllerTest extends ImportFeatureTestCase
             ->assertOk()
             ->assertSeeText("Carga #{$batchId}")
             ->assertSeeText('04/10/2026 22:30:00')
-            ->assertSeeText('Monto inválido');
+            ->assertSeeText('Monto inválido')
+            ->assertSeeText('Jesús Gabriel Garcia Palacios')
+            ->assertDontSeeText('user:'.$user->id);
     }
 
     public function test_unknown_batch_returns_404(): void

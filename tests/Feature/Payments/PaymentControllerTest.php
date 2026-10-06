@@ -265,9 +265,13 @@ class PaymentControllerTest extends PaymentFeatureTestCase
             ->assertSeeText('BCP')
             ->assertSeeText('0060814')
             ->assertSeeText('Pago confirmado por tesorería.')
-            ->assertSeeText('pagos_octubre.csv')
-            ->assertSeeText('batch-2026-10')
-            ->assertSeeText('01/10/2026 17:00:00')
+            ->assertDontSeeText('Raw ID')
+            ->assertDontSeeText('Archivo de origen')
+            ->assertDontSeeText('Batch ID')
+            ->assertDontSeeText('Fecha de ingesta')
+            ->assertDontSeeText('pagos_octubre.csv')
+            ->assertDontSeeText('batch-2026-10')
+            ->assertDontSeeText('01/10/2026 17:00:00')
             ->assertDontSeeText('Editar')
             ->assertDontSeeText('Identificar');
     }

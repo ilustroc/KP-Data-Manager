@@ -2,6 +2,7 @@
 
 namespace App\Services\Imports;
 
+use App\FinancialEntity;
 use App\ImportOrigin;
 use App\ImportStatus;
 use App\ImportType;
@@ -22,7 +23,9 @@ class ImportUploadService
         ImportType $type,
         ImportOrigin $origin,
         User $user,
+        ?FinancialEntity $entity = null,
     ): int {
+        $this->validateProfileSelection($type, $entity);
         $sourcePath = $file->getRealPath();
 
         if ($sourcePath === false) {
@@ -37,6 +40,7 @@ class ImportUploadService
             metadata: $metadata,
             type: $type,
             origin: $origin,
+            entity: $entity,
             auditor: 'user:'.$user->getAuthIdentifier(),
             removeSourceAfterRegistration: false,
         );
@@ -48,7 +52,9 @@ class ImportUploadService
         ImportType $type,
         ImportOrigin $origin,
         string $auditor,
+        ?FinancialEntity $entity = null,
     ): int {
+        $this->validateProfileSelection($type, $entity);
         $metadata = $this->files->inspect($sourcePath, $originalName);
 
         return $this->register(
@@ -56,6 +62,7 @@ class ImportUploadService
             metadata: $metadata,
             type: $type,
             origin: $origin,
+            entity: $entity,
             auditor: $auditor,
             removeSourceAfterRegistration: true,
         );
@@ -66,6 +73,7 @@ class ImportUploadService
         ImportFileMetadata $metadata,
         ImportType $type,
         ImportOrigin $origin,
+        ?FinancialEntity $entity,
         string $auditor,
         bool $removeSourceAfterRegistration,
     ): int {
@@ -93,6 +101,7 @@ class ImportUploadService
                 metadata: $metadata,
                 type: $type,
                 origin: $origin,
+                entity: $entity,
                 auditor: $auditor,
                 removeSourceAfterRegistration: $removeSourceAfterRegistration,
             );
@@ -107,6 +116,7 @@ class ImportUploadService
         ImportFileMetadata $metadata,
         ImportType $type,
         ImportOrigin $origin,
+        ?FinancialEntity $entity,
         string $auditor,
         bool $removeSourceAfterRegistration,
     ): int {
@@ -119,6 +129,8 @@ class ImportUploadService
             $batchId = (int) $connection->table(config('imports.table'))->insertGetId([
                 'tipo' => $type->value,
                 'origen' => $origin->value,
+                'entidad' => $entity?->value,
+                'perfil_version' => $entity?->profileVersion(),
                 'archivo' => $metadata->originalName,
                 'archivo_original' => $metadata->originalName,
                 'archivo_interno' => $internalName,
@@ -166,6 +178,7 @@ class ImportUploadService
                 'archivo' => $metadata->originalName,
                 'tipo' => $type->value,
                 'origen' => $origin->value,
+                'entidad' => $entity?->value,
                 'estado' => ImportStatus::Pending->value,
                 'tamano_bytes' => $metadata->size,
                 'sha256' => $metadata->sha256,
@@ -281,6 +294,17 @@ class ImportUploadService
                 'path' => $path,
                 'exception' => $exception,
             ]);
+        }
+    }
+
+    private function validateProfileSelection(ImportType $type, ?FinancialEntity $entity): void
+    {
+        if ($type === ImportType::Portfolio && ($entity === null || ! $entity->isImplemented())) {
+            throw new InvalidImportFile('La carga de cartera requiere una entidad con perfil implementado.');
+        }
+
+        if ($type !== ImportType::Portfolio && $entity !== null) {
+            throw new InvalidImportFile('La entidad financiera solo corresponde a cargas de cartera.');
         }
     }
 

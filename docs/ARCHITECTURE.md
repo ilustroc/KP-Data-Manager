@@ -654,4 +654,79 @@ Estas decisiones no deben inventarse durante el desarrollo:
 8. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
 9. Privilegios definitivos del usuario de aplicación si las vistas se convierten a `SQL SECURITY INVOKER`.
 
+## 18. Carteras — fundación multientidad y BBVA v1
+
+La cartera no comparte una tabla Bronze universal. Cada entidad conserva su contrato físico y su evolución de versiones, mientras Silver expone un modelo común:
+
+```text
+CARTERA
+   ↓
+Entidad financiera + versión de perfil
+   ↓
+raw_cartera_<entidad> (Bronze propio e inmutable)
+   ↓
+cartera_operaciones
+   ├── cartera_contactos
+   └── cartera_direcciones
+```
+
+`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Así una carga se identifica como `CARTERA / BBVA / 1` y una futura modificación de formato crea `BBVA / 2` sin reinterpretar archivos históricos.
+
+### 18.1 Contrato multientidad
+
+| Entidad | documento_cliente | cuenta | operacion |
+|---|---|---|---|
+| BBVA | `numdoc` | `CODCENTRAL` | `CONTRATO` |
+| Caja Arequipa | `NRO_DOC_TIT` | `CUENTA` | `OPERACION` |
+| Compartamos | `NumDoc` | `Ctacliente` | `Operación` |
+| Confianza | `DNI` | `Cuenta Cliente` | `Operación` |
+| Wandoo | `DNI` | exactamente `"0" + DNI` | `Numero de Prestamo` |
+
+Solo BBVA v1 está implementado. Las demás filas documentan contratos futuros y no habilitan loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
+
+### 18.2 Perfil BBVA v1
+
+El perfil declara encabezados, tipos, reglas y mapping. La política estructural es estricta: columnas faltantes, duplicadas o adicionales generan `ERROR` antes de insertar. Esta decisión evita asignar silenciosamente un formato nuevo al perfil v1; una variación aprobada se modelará como perfil v2.
+
+| Campo BBVA | Bronze | Silver |
+|---|---|---|
+| `CODCENTRAL` | mismo nombre y texto | `cartera_operaciones.cuenta` |
+| `CONTRATO` | mismo nombre y texto | `cartera_operaciones.operacion` |
+| `CLAVE` | mismo nombre | no se fuerza al modelo común |
+| `DESJUDICIA` | mismo nombre | no se fuerza al modelo común |
+| `DOCUMENTO` | mismo nombre y texto | `identificador_origen` |
+| `UGA` | mismo nombre y texto | no se fuerza al modelo común |
+| `TERRITORIO` | mismo nombre | `territorio` |
+| `NOMBRE` | mismo nombre | `nombre_cliente` |
+| `MONEDA` | mismo nombre | `moneda` |
+| `Suma de Importes` | texto fuente | `saldo_capital` como `DECIMAL(15,2)` |
+| `Suma de INTERES` | texto fuente | `interes` como `DECIMAL(15,2)` |
+| `Suma de MORA` | texto fuente | `mora` como `DECIMAL(15,2)` |
+| `OFICINA` | mismo nombre y texto | `oficina` |
+| `NOMB_OF` | mismo nombre | `agencia` |
+| `FECHAVEN` | representación fuente | `fecha_vencimiento` como `DATE` |
+| `PRODUCTO` | mismo nombre | `producto` |
+| `DESCPROD` | mismo nombre | `descripcion_producto` |
+| `tipodoc` | mismo nombre | `tipo_documento` |
+| `numdoc` | mismo nombre y texto | `documento_cliente` |
+| `direccion` | mismo nombre | `cartera_direcciones.direccion` |
+| `REFE` | mismo nombre | `cartera_direcciones.referencia` |
+| `referencia1` | mismo nombre | `cartera_direcciones.referencia1` |
+| `referencia2` | mismo nombre | `cartera_direcciones.referencia2` |
+| `ubicacion` | mismo nombre | `cartera_direcciones.ubicacion` |
+| `codpostal` | mismo nombre y texto | `cartera_direcciones.codigo_postal` |
+| `ubigeo` | mismo nombre y texto | operaciones y direcciones: `ubigeo` |
+| `dpto` | mismo nombre | operaciones y direcciones: `departamento` |
+| `provincia` | mismo nombre | operaciones y direcciones: `provincia` |
+| `distrito` | mismo nombre | operaciones y direcciones: `distrito` |
+| `tipofono1..5` | nombres originales | cinco posibles filas `cartera_contactos.tipo` |
+| `prefijo1..5` | nombres originales y texto | `cartera_contactos.prefijo` |
+| `fono1..5` | nombres originales y texto | `cartera_contactos.telefono` |
+| `extension1..5` | nombres originales y texto | `cartera_contactos.extension` |
+| `NOMB_ESTUD` | mismo nombre | no se fuerza al modelo común |
+| `nomb_est_saehost` | mismo nombre | no se fuerza al modelo común |
+| `COSECHA` | mismo nombre y texto | `cosecha` |
+
+Los identificadores permanecen texto y conservan ceros, guiones y formatos alfanuméricos. `deuda_total` queda `NULL`; no se aplica una fórmula no confirmada. Cada fila válida produce primero su Raw y luego su operación/contactos/dirección dentro de la misma transacción corta. `source_raw_id` conserva la navegación exacta a Bronze. No se agregan foreign keys entre esquemas ni restricciones únicas de negocio en esta fase; se usan índices de trazabilidad y consulta.
+
 El snapshot resuelve la estructura física, pero no el estado de los datos ni los planes de ejecución. Cualquier cambio DDL se entrega como script revisable con precondiciones, impacto, verificación y rollback; no se aplica implícitamente desde una request web.

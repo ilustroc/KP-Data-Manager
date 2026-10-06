@@ -93,6 +93,7 @@ class ImportProcessControllerTest extends ImportFeatureTestCase
         $this->actingAs($user)
             ->get(route('imports.show', $batchId))
             ->assertSeeText('Preparando procesamiento...')
+            ->assertSee('data-auto-refresh-after="8000"', false)
             ->assertDontSeeText('Procesar carga');
     }
 
@@ -134,7 +135,9 @@ class ImportProcessControllerTest extends ImportFeatureTestCase
             ->assertSeeText("Carga #{$batchId}")
             ->assertSeeText('pagos subir.xlsx')
             ->assertSeeText('35.25 KB')
-            ->assertSeeText('Procesadas')
+            ->assertSee('assets/brand/kp-invest-logo.png', false)
+            ->assertSee('assets/brand/kp-invest-mark.png', false)
+            ->assertSeeText('Filas del archivo')
             ->assertSeeText('Cargadas')
             ->assertSeeText('Con error')
             ->assertDontSeeText('Batch')

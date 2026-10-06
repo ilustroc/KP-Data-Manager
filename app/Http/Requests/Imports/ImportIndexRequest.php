@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Imports;
 
+use App\FinancialEntity;
 use App\ImportOrigin;
 use App\ImportStatus;
 use App\ImportType;
@@ -24,6 +25,7 @@ class ImportIndexRequest extends FormRequest
         return [
             'batch_id' => ['nullable', 'integer', 'min:1'],
             'tipo' => ['nullable', Rule::enum(ImportType::class)],
+            'entidad' => ['nullable', Rule::enum(FinancialEntity::class)],
             'origen' => ['nullable', Rule::enum(ImportOrigin::class)],
             'estado' => ['nullable', Rule::enum(ImportStatus::class)],
             'fecha_desde' => ['nullable', 'date_format:Y-m-d'],
@@ -44,9 +46,10 @@ class ImportIndexRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'batch_id.integer' => 'El batch debe ser un número entero.',
-            'batch_id.min' => 'El batch debe ser mayor que cero.',
+            'batch_id.integer' => 'El número de carga debe ser un número entero.',
+            'batch_id.min' => 'El número de carga debe ser mayor que cero.',
             'tipo.enum' => 'El tipo seleccionado no es válido.',
+            'entidad.enum' => 'La entidad financiera seleccionada no es válida.',
             'origen.enum' => 'El origen seleccionado no es válido.',
             'estado.enum' => 'El estado seleccionado no es válido.',
             'fecha_desde.date_format' => 'La fecha desde debe ser una fecha válida.',

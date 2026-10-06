@@ -1,6 +1,6 @@
 # KP Data Manager ETL
 
-Motor CLI para procesar batches `PENDIENTE` de tipo `PAGOS` hacia `kp_bronze.raw_pagos`. El CLI continúa siendo independiente; Fase 6 permite invocarlo desde un Queue Job de Laravel sin compartir las credenciales MySQL de ambas aplicaciones.
+Motor CLI para procesar cargas `PENDIENTE`. Mantiene el loader de `PAGOS` y agrega routing por perfil para `CARTERA / BBVA / v1`. El CLI continúa siendo independiente y puede ser invocado por el Queue Job de Laravel sin compartir las credenciales MySQL de ambas aplicaciones.
 
 ## Runtime
 
@@ -39,6 +39,7 @@ ETL_DB_USERNAME=kp_data_manager_etl
 ETL_DB_PASSWORD=
 ETL_CONTROL_DATABASE=kp_control
 ETL_BRONZE_DATABASE=kp_bronze
+ETL_SILVER_DATABASE=kp_silver
 ETL_IMPORT_STORAGE_ROOT=../storage/app/private/imports
 ETL_INSERT_BATCH_SIZE=5000
 ETL_PROGRESS_UPDATE_EVERY=5000
@@ -52,6 +53,9 @@ El worker rechaza explícitamente `root`, `jesus_admin` y `kp_data_manager_app`.
 - `SELECT`, `UPDATE` sobre `kp_control.import_batch`.
 - `INSERT` sobre `kp_control.import_error`.
 - `INSERT` sobre `kp_bronze.raw_pagos`.
+- `INSERT`, `SELECT` sobre `kp_bronze.raw_cartera_bbva` para correlacionar `source_row` con `raw_id` dentro del chunk.
+- `INSERT`, `SELECT` sobre `kp_silver.cartera_operaciones`.
+- `INSERT` sobre `kp_silver.cartera_contactos` y `kp_silver.cartera_direcciones`.
 
 No necesita `DELETE` ni `UPDATE` sobre Bronze.
 
@@ -63,6 +67,11 @@ Antes de una prueba manual deben haberse revisado y aplicado manualmente:
 2. `database/sql/002_extend_import_batch_file_metadata.sql`.
 3. `database/sql/003_add_raw_pagos_row_hash.sql`.
 4. `database/sql/007_align_raw_pagos_batch_id.sql`.
+5. `database/sql/008_extend_import_batch_for_portfolios.sql`.
+6. `database/sql/009_create_raw_cartera_bbva.sql`.
+7. `database/sql/010_create_cartera_operaciones.sql`.
+8. `database/sql/011_create_cartera_contactos.sql`.
+9. `database/sql/012_create_cartera_direcciones.sql`.
 
 `003` agrega una huella técnica con índice **no único**. El ETL calcula `row_hash`, pero no consulta esa columna ni descarta coincidencias. `007` alinea `raw_pagos.batch_id` con `import_batch.batch_id` como `BIGINT UNSIGNED NULL` e incorpora un índice no único, sin foreign key entre esquemas.
 
@@ -109,15 +118,39 @@ php artisan queue:work --queue=etl
 
 ## Flujo del batch
 
-1. Lee el batch y exige tipo `PAGOS` y estado `PENDIENTE`.
-2. Resuelve `archivo_ruta` dentro de `ETL_IMPORT_STORAGE_ROOT`, sin permitir rutas absolutas, `..` ni symlinks externos.
-3. Verifica existencia, extensión y SHA-256 contra los metadatos de Fase 4.
-4. Reclama el batch atómicamente como `PROCESANDO` y reinicia sus contadores.
-5. Lee CSV o XLSX como iterador.
-6. Normaliza y valida cada fila.
-7. Inserta pagos y errores con `executemany` en transacciones cortas de aproximadamente `ETL_INSERT_BATCH_SIZE` filas.
-8. Actualiza contadores periódicamente.
-9. Finaliza como `COMPLETADO`, `COMPLETADO_CON_ERRORES` o `ERROR`, siempre con fechas UTC.
+1. Lee la carga y exige estado `PENDIENTE`.
+2. Resuelve el loader con un registry: `PAGOS` conserva su loader; `CARTERA / BBVA / 1` utiliza el perfil BBVA v1. Cualquier combinación no registrada se rechaza.
+3. Resuelve `archivo_ruta` dentro de `ETL_IMPORT_STORAGE_ROOT`, sin permitir rutas absolutas, `..` ni symlinks externos.
+4. Verifica existencia, extensión y SHA-256 contra los metadatos registrados.
+5. Reclama la carga atómicamente como `PROCESANDO` y reinicia sus contadores.
+6. Lee CSV o XLSX como iterador.
+7. Normaliza y valida cada fila.
+8. Inserta por `executemany` en transacciones cortas de aproximadamente `ETL_INSERT_BATCH_SIZE` filas.
+9. Actualiza contadores periódicamente.
+10. Finaliza como `COMPLETADO`, `COMPLETADO_CON_ERRORES` o `ERROR`, siempre con fechas UTC.
+
+### Carteras y BBVA v1
+
+El perfil se identifica por la terna `tipo=CARTERA`, `entidad=BBVA`, `perfil_version=1`. Los encabezados BBVA v1 son estrictos: un encabezado obligatorio ausente, duplicado o adicional indica un formato incompatible y detiene la carga antes de insertar filas. Los cambios de formato deben incorporarse como una nueva versión, nunca reinterpretando silenciosamente una carga histórica.
+
+Cada fila válida se confirma en una única transacción de chunk:
+
+1. Inserción fiel en `kp_bronze.raw_cartera_bbva`.
+2. Consulta agrupada por `batch_id + source_row` para obtener `raw_id`.
+3. Inserción homologada en `kp_silver.cartera_operaciones`.
+4. Consulta agrupada de las operaciones insertadas.
+5. Inserción normalizada de teléfonos y dirección.
+
+No se ejecutan `SELECT` ni `INSERT` individuales por fila. Si falla cualquier paso, se revierte el chunk completo. Los chunks anteriores permanecen confirmados, igual que en Pagos.
+
+Mapeo de identidad BBVA confirmado:
+
+- `numdoc` → `documento_cliente`.
+- `CODCENTRAL` → `cuenta`.
+- `CONTRATO` → `operacion`.
+- `DOCUMENTO` → `identificador_origen`; nunca reemplaza los tres campos anteriores.
+
+`deuda_total` permanece `NULL`: no se deriva de capital, interés y mora sin una definición de negocio aprobada. Los cinco bloques de teléfonos se expanden a filas y la dirección BBVA se registra como `PRINCIPAL`. `row_hash` es una huella SHA-256 no única y no elimina registros.
 
 Una caída no borra chunks ya confirmados. Las filas quedan trazables por `batch_id`; una futura operación controlada de rollback podría localizarlas con `WHERE batch_id = X`, pero esta fase no implementa borrados ni reprocesamiento.
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\FinancialEntity;
 use App\Http\Requests\Imports\ImportIndexRequest;
 use App\Http\Requests\Imports\StoreImportRequest;
 use App\ImportOrigin;
@@ -29,6 +30,7 @@ class ImportController extends Controller
             'batches' => $batches->paginate($filters),
             'filters' => $filters,
             'types' => ImportType::cases(),
+            'entities' => FinancialEntity::cases(),
             'origins' => ImportOrigin::cases(),
             'statuses' => ImportStatus::cases(),
         ]);
@@ -38,6 +40,7 @@ class ImportController extends Controller
     {
         return view('imports.create', [
             'types' => ImportType::cases(),
+            'entities' => FinancialEntity::cases(),
             'origins' => ImportOrigin::cases(),
             'maximumUploadMegabytes' => (int) config('imports.max_web_upload_mb'),
         ]);
@@ -50,12 +53,16 @@ class ImportController extends Controller
         ImportBatchDispatcher $dispatcher,
     ): RedirectResponse {
         $validated = $request->validated();
+        $entity = isset($validated['entidad'])
+            ? FinancialEntity::from($validated['entidad'])
+            : null;
 
         try {
             $batchId = $uploads->registerWeb(
                 file: $request->file('archivo'),
                 type: ImportType::from($validated['tipo']),
                 origin: ImportOrigin::from($validated['origen']),
+                entity: $entity,
                 user: $request->user(),
             );
         } catch (DuplicateImportFile|InvalidImportFile|ImportRegistrationFailed $exception) {

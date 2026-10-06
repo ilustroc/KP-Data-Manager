@@ -14,7 +14,12 @@ class AuthenticationTest extends TestCase
     {
         $this->get(route('login'))
             ->assertViewIs('auth.login')
-            ->assertSee('Inicia sesión');
+            ->assertSeeText('Bienvenido')
+            ->assertSeeText('Iniciar sesión')
+            ->assertSee('assets/brand/kp-invest-logo.png', false)
+            ->assertSee('assets/brand/login-illustration.png', false)
+            ->assertSee('data-password-toggle', false)
+            ->assertDontSeeText('Registrarse');
     }
 
     public function test_active_user_can_authenticate_with_valid_credentials(): void

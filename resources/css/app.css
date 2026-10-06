@@ -5,23 +5,67 @@
 @source '../views/**/*.blade.php';
 
 @theme {
-    --font-sans: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
-    --color-kp-50: #f0f6ff;
-    --color-kp-100: #dfeaff;
-    --color-kp-500: #2563eb;
-    --color-kp-600: #1d4ed8;
-    --color-kp-700: #1e40af;
-    --color-sidebar: #111827;
+    --font-sans: 'Segoe UI', Aptos, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --color-kp-50: #effbf1;
+    --color-kp-100: #d9f6de;
+    --color-kp-200: #afeabd;
+    --color-kp-300: #79d990;
+    --color-kp-400: #3bc65d;
+    --color-kp-500: #00a81c;
+    --color-kp-600: #008f18;
+    --color-kp-700: #007515;
+    --color-kp-800: #075c18;
+    --color-kp-900: #084b17;
+    --color-brand-blue: #00217a;
+    --color-sidebar: #061b45;
 }
 
 @layer base {
     body {
-        @apply bg-slate-50 text-slate-800 antialiased;
+        @apply bg-[#f5f7fa] text-slate-800 antialiased;
     }
 
     button,
-    input {
+    input,
+    select,
+    summary,
+    a {
         @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kp-500;
+    }
+
+    ::selection {
+        @apply bg-kp-100 text-kp-900;
+    }
+}
+
+@layer components {
+    .kp-panel {
+        @apply rounded-xl border border-slate-200/90 bg-white;
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.03);
+    }
+
+    .kp-btn-primary {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg bg-kp-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-kp-600 disabled:cursor-not-allowed disabled:opacity-60;
+    }
+
+    .kp-btn-secondary {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50;
+    }
+
+    .kp-field {
+        @apply mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 hover:border-slate-400 focus:border-kp-500 focus:ring-3 focus:ring-kp-100;
+    }
+
+    .kp-label {
+        @apply block text-xs font-semibold uppercase tracking-[0.08em] text-slate-600;
+    }
+
+    .kp-eyebrow {
+        @apply text-[11px] font-bold uppercase tracking-[0.18em] text-kp-600;
+    }
+
+    .kp-table-heading {
+        @apply px-4 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500;
     }
 }

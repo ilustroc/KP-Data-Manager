@@ -115,6 +115,8 @@ abstract class ImportFeatureTestCase extends TestCase
         Schema::connection('sqlite')->create('import_batch', function (Blueprint $table): void {
             $table->id('batch_id');
             $table->string('tipo', 50);
+            $table->string('entidad', 50)->nullable();
+            $table->string('perfil_version', 20)->nullable();
             $table->string('origen', 50)->nullable();
             $table->string('archivo');
             $table->string('archivo_original')->nullable();

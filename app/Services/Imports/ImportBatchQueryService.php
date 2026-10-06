@@ -2,6 +2,7 @@
 
 namespace App\Services\Imports;
 
+use App\Services\Audit\AuditActorResolver;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\ConnectionInterface;
@@ -10,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 
 class ImportBatchQueryService
 {
+    public function __construct(private readonly AuditActorResolver $actors) {}
+
     /**
      * @param  array<string, mixed>  $filters
      */
@@ -19,18 +22,28 @@ class ImportBatchQueryService
 
         $this->applyFilters($query, $filters);
 
-        return $query
+        $batches = $query
             ->orderByDesc('batch_id')
             ->simplePaginate($this->perPage($filters))
             ->withQueryString();
+
+        $this->actors->attachDisplayNames($batches->items());
+
+        return $batches;
     }
 
     public function find(int $batchId): ?object
     {
-        return $this->connection()
+        $batch = $this->connection()
             ->table(config('imports.table'))
             ->where('batch_id', $batchId)
             ->first();
+
+        if ($batch !== null) {
+            $this->actors->attachDisplayNames([$batch]);
+        }
+
+        return $batch;
     }
 
     public function paginateErrors(int $batchId): Paginator
@@ -57,7 +70,7 @@ class ImportBatchQueryService
             $query->where('batch_id', (int) $filters['batch_id']);
         }
 
-        foreach (['tipo', 'origen', 'estado'] as $filter) {
+        foreach (['tipo', 'entidad', 'origen', 'estado'] as $filter) {
             if (filled($filters[$filter] ?? null)) {
                 $query->where($filter, $filters[$filter]);
             }
@@ -68,7 +81,7 @@ class ImportBatchQueryService
         }
 
         if (filled($filters['usuario'] ?? null)) {
-            $query->where('usuario', 'like', $filters['usuario'].'%');
+            $this->actors->applyUserNameFilter($query, 'usuario', $filters['usuario']);
         }
 
         if (filled($filters['fecha_desde'] ?? null)) {

@@ -15,7 +15,7 @@
                 @forelse ($history as $resolution)
                     <tr>
                         <td class="whitespace-nowrap px-4 py-3"><x-utc-datetime :value="$resolution->fecha_modificacion" /></td>
-                        <td class="whitespace-nowrap px-4 py-3 font-mono text-xs">{{ $resolution->usuario }}</td>
+                        <td class="max-w-52 px-4 py-3 text-sm font-medium text-slate-800"><span class="line-clamp-2" title="{{ $resolution->usuario_nombre }}">{{ $resolution->usuario_nombre }}</span></td>
                         <td class="whitespace-nowrap px-4 py-3 font-mono">{{ filled($resolution->documento_anterior) ? $resolution->documento_anterior : '—' }}</td>
                         <td class="whitespace-nowrap px-4 py-3 font-mono font-medium text-slate-900">{{ $resolution->documento_nuevo }}</td>
                         <td class="max-w-lg whitespace-pre-wrap break-words px-4 py-3">{{ filled($resolution->motivo) ? $resolution->motivo : '—' }}</td>

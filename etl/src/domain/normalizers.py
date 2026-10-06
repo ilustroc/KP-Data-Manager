@@ -27,7 +27,9 @@ def utc_now_naive() -> datetime:
 
 
 def normalize_header(value: Any) -> str:
-    return "" if value is None else str(value).strip().upper()
+    if value is None:
+        return ""
+    return " ".join(str(value).replace("\u00a0", " ").strip().upper().split())
 
 
 def cell_to_text(cell: CellValue) -> str | None:

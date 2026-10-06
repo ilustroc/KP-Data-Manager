@@ -5,22 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Dashboard') · {{ config('app.name') }}</title>
+    <link rel="icon" type="image/png" href="{{ asset('assets/brand/kp-invest-mark.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
     <div class="min-h-screen lg:flex">
-        <div data-sidebar-overlay class="fixed inset-0 z-30 hidden bg-slate-950/40 lg:hidden"></div>
+        <div data-sidebar-overlay class="fixed inset-0 z-30 hidden bg-slate-950/55 backdrop-blur-[1px] lg:hidden"></div>
 
-        <aside data-sidebar class="fixed inset-y-0 left-0 z-40 flex w-72 -translate-x-full flex-col bg-sidebar text-white shadow-xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none">
-            <div class="flex h-20 items-center gap-3 border-b border-white/10 px-6">
-                <div class="grid size-10 place-items-center rounded-xl bg-kp-500 text-sm font-black tracking-tight shadow-lg shadow-blue-950/30">KP</div>
-                <div>
-                    <p class="font-semibold tracking-tight">KP Data Manager</p>
-                    <p class="text-xs text-slate-400">Control de datos</p>
+        <aside data-sidebar class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-sidebar text-white shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none">
+            <div class="flex h-[5rem] items-center border-b border-white/10 px-4">
+                <div class="flex w-full items-center gap-3 rounded-lg bg-white px-3 py-2 shadow-sm">
+                    <img src="{{ asset('assets/brand/kp-invest-logo.png') }}" alt="KP Invest" class="h-7 w-auto shrink-0">
+                    <span class="border-l border-slate-200 pl-3 text-[10px] font-bold uppercase leading-4 tracking-[0.12em] text-brand-blue">Data<br>Manager</span>
                 </div>
             </div>
 
-            <nav class="flex-1 overflow-y-auto px-4 py-6" aria-label="Navegación principal">
+            <nav class="flex-1 overflow-y-auto px-3 py-5" aria-label="Navegación principal">
                 <div class="flex flex-col gap-1">
                     <x-sidebar-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
                         <x-slot:icon>
@@ -31,7 +31,7 @@
                 </div>
 
                 <div class="mt-8">
-                    <p class="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Cargas</p>
+                    <p class="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Cargas</p>
                     <div class="mt-2 flex flex-col gap-1">
                         @can('operate')
                             <x-sidebar-link :href="route('imports.create')" :active="request()->routeIs('imports.create')">
@@ -51,7 +51,7 @@
                 </div>
 
                 <div class="mt-8">
-                    <p class="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Pagos</p>
+                    <p class="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Pagos</p>
                     <div class="mt-2 flex flex-col gap-1">
                         <x-sidebar-link :href="route('payments.index')" :active="request()->routeIs('payments.index')">
                             <x-slot:icon>
@@ -75,19 +75,16 @@
                 </div>
             </nav>
 
-            <div class="border-t border-white/10 p-4">
-                <div class="mb-3 flex items-center gap-3 px-2">
-                    <div class="grid size-9 place-items-center rounded-full bg-slate-700 text-xs font-bold">
-                        {{ str(auth()->user()->name)->substr(0, 2)->upper() }}
-                    </div>
+            <div class="border-t border-white/8 p-3">
+                <div class="mb-2 flex items-center gap-3 rounded-lg bg-white/[0.04] px-3 py-2.5">
                     <div class="min-w-0 flex-1">
-                        <p class="truncate text-sm font-medium">{{ auth()->user()->name }}</p>
+                        <p class="truncate text-sm font-medium" title="{{ auth()->user()->name }}">{{ auth()->user()->name }}</p>
                         <p class="truncate text-xs text-slate-400">{{ auth()->user()->role->label() }}</p>
                     </div>
                 </div>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
-                    <button type="submit" class="w-full rounded-lg border border-white/10 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-white">
+                    <button type="submit" class="w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white">
                         Cerrar sesión
                     </button>
                 </form>
@@ -95,28 +92,29 @@
         </aside>
 
         <div class="min-w-0 flex-1">
-            <header class="flex h-20 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
+            <header class="sticky top-0 z-20 flex h-[4.5rem] items-center justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
                 <div class="flex items-center gap-3">
-                    <button data-sidebar-toggle type="button" class="rounded-lg border border-slate-200 p-2 text-slate-600 lg:hidden" aria-label="Abrir navegación" aria-expanded="false">
+                    <button data-sidebar-toggle type="button" class="rounded-lg border border-slate-300 bg-white p-2 text-slate-600 lg:hidden" aria-label="Abrir navegación" aria-expanded="false">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16"/></svg>
                     </button>
                     <div>
-                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">KP INVEST</p>
-                        <h1 class="text-lg font-semibold text-slate-900">@yield('page-heading', 'Dashboard')</h1>
+                        <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-kp-600">KP INVEST</p>
+                        <h1 class="text-base font-semibold text-slate-950 sm:text-lg">@yield('page-heading', 'Dashboard')</h1>
                     </div>
                 </div>
-                <span class="hidden rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex">Entorno interno</span>
             </header>
 
-            <main class="p-4 sm:p-6 lg:p-8">
+            <main class="min-h-[calc(100vh-4.5rem)] p-4 sm:p-6 lg:p-8">
                 @if (session('status'))
-                    <div class="mx-auto mb-5 max-w-[100rem] rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800" role="status">
-                        {{ session('status') }}
+                    <div class="mx-auto mb-5 flex max-w-[100rem] items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
+                        <svg class="mt-0.5 size-4 shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m5 12 4 4L19 6"/></svg>
+                        <span class="font-medium">{{ session('status') }}</span>
                     </div>
                 @endif
                 @if (session('warning'))
-                    <div class="mx-auto mb-5 max-w-[100rem] rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900" role="status">
-                        {{ session('warning') }}
+                    <div class="mx-auto mb-5 flex max-w-[100rem] items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+                        <svg class="mt-0.5 size-4 shrink-0 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/></svg>
+                        <span class="font-medium">{{ session('warning') }}</span>
                     </div>
                 @endif
                 @yield('content')

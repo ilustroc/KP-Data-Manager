@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from .config import Settings
 from .db import MySqlDatabase
 from .domain.errors import EtlError
-from .loaders.pagos_loader import PaymentLoader
+from .domain.errors import BatchNotFoundError
+from .loaders.registry import LoaderRegistry
 
 
 class JsonFormatter(logging.Formatter):
@@ -47,7 +48,7 @@ def positive_batch_id(value: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Procesa un batch PENDIENTE de PAGOS.")
+    parser = argparse.ArgumentParser(description="Procesa una carga PENDIENTE soportada.")
     parser.add_argument("--batch-id", required=True, type=positive_batch_id)
     arguments = parser.parse_args(argv)
 
@@ -57,7 +58,11 @@ def main(argv: list[str] | None = None) -> int:
         settings = Settings.from_environment()
         configure_logging(settings.log_level)
         database = MySqlDatabase(settings)
-        result = PaymentLoader(database, settings).process(arguments.batch_id)
+        batch = database.get_batch(arguments.batch_id)
+        if batch is None:
+            raise BatchNotFoundError(f"No existe el batch #{arguments.batch_id}.")
+        loader = LoaderRegistry().resolve(batch, database, settings)
+        result = loader.process(arguments.batch_id)
         logging.getLogger("kpdm.etl").info(
             "worker_completed",
             extra={

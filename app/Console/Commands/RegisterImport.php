@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\FinancialEntity;
 use App\ImportOrigin;
 use App\ImportType;
 use App\Services\Imports\DuplicateImportFile;
@@ -16,6 +17,7 @@ class RegisterImport extends Command
     protected $signature = 'kpdm:import:register
         {--file= : Archivo relativo al inbox configurado}
         {--tipo=PAGOS : Tipo de carga}
+        {--entidad= : Entidad financiera para cargas de cartera}
         {--origen=HISTORICO : Origen de la carga}';
 
     protected $description = 'Registra sin procesar un archivo grande ubicado en el inbox privado';
@@ -33,12 +35,14 @@ class RegisterImport extends Command
         try {
             $type = ImportType::from(strtoupper((string) $this->option('tipo')));
             $origin = ImportOrigin::from(strtoupper((string) $this->option('origen')));
+            $entity = $this->resolveEntity($type);
             $sourcePath = $this->resolveInboxFile($fileOption);
             $batchId = $uploads->registerInbox(
                 sourcePath: $sourcePath,
                 originalName: basename($sourcePath),
                 type: $type,
                 origin: $origin,
+                entity: $entity,
                 auditor: $this->commandAuditor(),
             );
         } catch (ValueError) {
@@ -54,6 +58,27 @@ class RegisterImport extends Command
         $this->info("Batch #{$batchId} registrado en estado PENDIENTE.");
 
         return self::SUCCESS;
+    }
+
+    private function resolveEntity(ImportType $type): ?FinancialEntity
+    {
+        $entityOption = strtoupper(trim((string) $this->option('entidad')));
+
+        if ($type !== ImportType::Portfolio) {
+            if ($entityOption !== '') {
+                throw new ValueError('La entidad solo corresponde a cargas de cartera.');
+            }
+
+            return null;
+        }
+
+        $entity = FinancialEntity::tryFrom($entityOption);
+
+        if ($entity === null || ! $entity->isImplemented()) {
+            throw new ValueError('La carga de cartera requiere una entidad con perfil implementado.');
+        }
+
+        return $entity;
     }
 
     private function resolveInboxFile(string $relativePath): string

@@ -9,8 +9,8 @@
     </div>
 @endif
 
-<form method="GET" action="{{ route('payments.corrections') }}" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+<form method="GET" action="{{ route('payments.corrections') }}" class="kp-panel p-4 sm:p-5">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <label class="block text-sm font-medium text-slate-700">
             Fecha cambio desde
             <input type="date" name="fecha_cambio_desde" value="{{ old('fecha_cambio_desde', $filters['fecha_cambio_desde'] ?? '') }}" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
@@ -24,12 +24,8 @@
             <input type="text" name="documento" maxlength="30" value="{{ old('documento', $filters['documento'] ?? '') }}" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900">
         </label>
         <label class="block text-sm font-medium text-slate-700">
-            Usuario auditor
-            <input type="text" name="usuario" maxlength="100" value="{{ old('usuario', $filters['usuario'] ?? '') }}" placeholder="Ej. user:15" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900">
-        </label>
-        <label class="block text-sm font-medium text-slate-700">
-            Raw ID
-            <input type="number" name="raw_pago_id" min="1" value="{{ old('raw_pago_id', $filters['raw_pago_id'] ?? '') }}" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
+            Usuario
+            <input type="text" name="usuario" maxlength="100" value="{{ old('usuario', $filters['usuario'] ?? '') }}" placeholder="Buscar por nombre" class="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
         </label>
         <label class="block text-sm font-medium text-slate-700">
             Filas por página
@@ -41,7 +37,7 @@
         </label>
     </div>
     <div class="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
-        <button type="submit" class="rounded-lg bg-kp-600 px-4 py-2 text-sm font-semibold text-white hover:bg-kp-700">Buscar</button>
+        <button type="submit" class="kp-btn-primary !py-2">Buscar</button>
         <a href="{{ route('payments.corrections') }}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Limpiar filtros</a>
     </div>
 </form>

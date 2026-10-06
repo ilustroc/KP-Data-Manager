@@ -53,6 +53,7 @@ class Settings:
     db_password: str
     control_database: str
     bronze_database: str
+    silver_database: str
     storage_root: Path
     insert_batch_size: int
     progress_update_every: int
@@ -85,6 +86,7 @@ class Settings:
             db_password=os.getenv("ETL_DB_PASSWORD", ""),
             control_database=_database_identifier("ETL_CONTROL_DATABASE", "kp_control"),
             bronze_database=_database_identifier("ETL_BRONZE_DATABASE", "kp_bronze"),
+            silver_database=_database_identifier("ETL_SILVER_DATABASE", "kp_silver"),
             storage_root=storage_root.resolve(),
             insert_batch_size=_positive_integer("ETL_INSERT_BATCH_SIZE", 5000),
             progress_update_every=_positive_integer("ETL_PROGRESS_UPDATE_EVERY", 5000),

@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Services\Audit\AuditActorResolver;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\ConnectionInterface;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class PaymentQueryService
 {
+    public function __construct(private readonly AuditActorResolver $actors) {}
+
     /** @var list<string> */
     private const PAYMENT_COLUMNS = [
         'raw_id',
@@ -65,7 +68,7 @@ class PaymentQueryService
      */
     public function history(int $rawId): Collection
     {
-        return $this->controlConnection()
+        $history = $this->controlConnection()
             ->table(config('payments.tables.resolutions'))
             ->select([
                 'id_resolucion',
@@ -81,6 +84,10 @@ class PaymentQueryService
             ->orderByDesc('fecha_modificacion')
             ->orderByDesc('id_resolucion')
             ->get();
+
+        $this->actors->attachDisplayNames($history);
+
+        return $history;
     }
 
     /**
@@ -135,17 +142,17 @@ class PaymentQueryService
         }
 
         if (filled($filters['usuario'] ?? null)) {
-            $query->where('resolution.usuario', 'like', $filters['usuario'].'%');
+            $this->actors->applyUserNameFilter($query, 'resolution.usuario', $filters['usuario']);
         }
 
-        if (filled($filters['raw_pago_id'] ?? null)) {
-            $query->where('resolution.raw_pago_id', (int) $filters['raw_pago_id']);
-        }
-
-        return $query
+        $corrections = $query
             ->orderByDesc('resolution.fecha_modificacion')
             ->orderByDesc('resolution.id_resolucion')
             ->simplePaginate($this->perPage($filters));
+
+        $this->actors->attachDisplayNames($corrections->items());
+
+        return $corrections;
     }
 
     /**

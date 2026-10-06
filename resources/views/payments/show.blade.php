@@ -9,7 +9,7 @@
             <div>
                 <p class="text-sm font-semibold text-kp-600">Pago #{{ $payment->raw_id }}</p>
                 <h2 class="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Información del pago</h2>
-                <p class="mt-1 text-sm text-slate-600">Vista de solo lectura del documento efectivo y los datos de origen.</p>
+                <p class="mt-1 text-sm text-slate-600">Consulta el documento vigente y la información registrada del pago.</p>
             </div>
             <div class="flex flex-wrap gap-2">
                 @can('operate')
@@ -23,38 +23,41 @@
             </div>
         </div>
 
-        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <dl class="grid sm:grid-cols-2 lg:grid-cols-3">
-                @foreach ([
-                    ['label' => 'Raw ID', 'value' => $payment->raw_id, 'mono' => true],
-                    ['label' => 'Fecha', 'value' => $payment->FECHA ? \Illuminate\Support\Carbon::parse($payment->FECHA)->format('d/m/Y') : '—'],
-                    ['label' => 'Hora', 'value' => $payment->HORA ? substr((string) $payment->HORA, 0, 8) : '—', 'mono' => true],
-                    ['label' => 'Documento', 'value' => filled($payment->DOCUMENTO) ? $payment->DOCUMENTO : '—', 'mono' => true],
-                    ['label' => 'Monto', 'value' => $payment->MONTO !== null ? 'S/ '.number_format((float) $payment->MONTO, 2, '.', ',') : '—'],
-                    ['label' => 'Acumulado', 'value' => $payment->ACUMULADO !== null ? 'S/ '.number_format((float) $payment->ACUMULADO, 2, '.', ',') : '—'],
-                    ['label' => 'Recaudo', 'value' => filled($payment->RECAUDO) ? $payment->RECAUDO : '—'],
-                    ['label' => 'Operación', 'value' => filled($payment->OPERACION) ? $payment->OPERACION : '—', 'mono' => true],
-                    ['label' => 'Archivo de origen', 'value' => filled($payment->source_file) ? $payment->source_file : '—'],
-                    ['label' => 'Batch ID', 'value' => filled($payment->batch_id) ? $payment->batch_id : '—', 'mono' => true],
-                    ['label' => 'Fecha de ingesta', 'value' => $payment->ingested_at, 'utc_datetime' => true],
-                ] as $item)
-                    <div class="border-b border-slate-100 px-5 py-4 sm:border-r">
-                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ $item['label'] }}</dt>
-                        <dd @class(['mt-1.5 break-words text-sm text-slate-900', 'font-mono' => $item['mono'] ?? false])>
-                            @if ($item['utc_datetime'] ?? false)
-                                <x-utc-datetime :value="$item['value']" />
-                            @else
-                                {{ $item['value'] }}
-                            @endif
-                        </dd>
-                    </div>
-                @endforeach
+        <section class="kp-panel overflow-hidden">
+            <dl class="grid sm:grid-cols-3">
+                <div class="border-b border-slate-100 px-5 py-4 sm:border-r">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Documento</dt>
+                    <dd class="mt-1.5 font-mono text-base font-semibold text-slate-950">{{ filled($payment->DOCUMENTO) ? $payment->DOCUMENTO : 'Sin identificar' }}</dd>
+                </div>
+                <div class="border-b border-slate-100 px-5 py-4 sm:border-r">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Fecha</dt>
+                    <dd class="mt-1.5 text-sm text-slate-900">{{ $payment->FECHA ? \Illuminate\Support\Carbon::parse($payment->FECHA)->format('d/m/Y') : '—' }}</dd>
+                </div>
+                <div class="border-b border-slate-100 px-5 py-4">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Hora</dt>
+                    <dd class="mt-1.5 font-mono text-sm text-slate-900">{{ $payment->HORA ? substr((string) $payment->HORA, 0, 8) : '—' }}</dd>
+                </div>
+                <div class="border-b border-slate-100 px-5 py-4 sm:border-r">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Monto</dt>
+                    <dd class="mt-1.5 text-base font-semibold text-slate-950">{{ $payment->MONTO !== null ? 'S/ '.number_format((float) $payment->MONTO, 2, '.', ',') : '—' }}</dd>
+                </div>
+                <div class="border-b border-slate-100 px-5 py-4 sm:border-r">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Acumulado</dt>
+                    <dd class="mt-1.5 text-sm font-medium text-slate-900">{{ $payment->ACUMULADO !== null ? 'S/ '.number_format((float) $payment->ACUMULADO, 2, '.', ',') : '—' }}</dd>
+                </div>
+                <div class="border-b border-slate-100 px-5 py-4">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Recaudo</dt>
+                    <dd class="mt-1.5 text-sm font-medium text-slate-900">{{ filled($payment->RECAUDO) ? $payment->RECAUDO : '—' }}</dd>
+                </div>
+                <div class="border-b border-slate-100 px-5 py-4 sm:col-span-3">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Operación</dt>
+                    <dd class="mt-1.5 font-mono text-sm text-slate-900">{{ filled($payment->OPERACION) ? $payment->OPERACION : '—' }}</dd>
+                </div>
+                <div class="px-5 py-5 sm:col-span-3">
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Comentario</dt>
+                    <dd class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{{ filled($payment->COMENTARIO) ? $payment->COMENTARIO : 'Sin comentario' }}</dd>
+                </div>
             </dl>
-
-            <div class="px-5 py-5">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Comentario</p>
-                <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{{ filled($payment->COMENTARIO) ? $payment->COMENTARIO : '—' }}</p>
-            </div>
         </section>
 
         <section class="mt-6">

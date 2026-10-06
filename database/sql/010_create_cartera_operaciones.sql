@@ -1,0 +1,46 @@
+-- KP Data Manager - Carteras 1 / modelo Silver común
+-- Compatible con MySQL 5.7.33.
+-- Pendiente de revisión y ejecución manual. No fue aplicado a producción.
+-- No define claves únicas de negocio ni foreign keys entre esquemas.
+
+CREATE TABLE `kp_silver`.`cartera_operaciones` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `entidad` VARCHAR(50) NOT NULL,
+    `cosecha` VARCHAR(100) NULL,
+    `documento_cliente` VARCHAR(100) NOT NULL,
+    `tipo_documento` VARCHAR(50) NULL,
+    `cuenta` VARCHAR(100) NOT NULL,
+    `operacion` VARCHAR(100) NOT NULL,
+    `identificador_origen` VARCHAR(100) NULL,
+    `nombre_cliente` VARCHAR(255) NULL,
+    `moneda` VARCHAR(20) NULL,
+    `saldo_capital` DECIMAL(15,2) NULL,
+    `deuda_total` DECIMAL(15,2) NULL,
+    `interes` DECIMAL(15,2) NULL,
+    `mora` DECIMAL(15,2) NULL,
+    `fecha_castigo` DATE NULL,
+    `fecha_desembolso` DATE NULL,
+    `fecha_vencimiento` DATE NULL,
+    `dias_atraso` INT NULL,
+    `producto` VARCHAR(100) NULL,
+    `descripcion_producto` VARCHAR(255) NULL,
+    `agencia` VARCHAR(255) NULL,
+    `oficina` VARCHAR(100) NULL,
+    `territorio` VARCHAR(100) NULL,
+    `ubigeo` VARCHAR(100) NULL,
+    `departamento` VARCHAR(100) NULL,
+    `provincia` VARCHAR(100) NULL,
+    `distrito` VARCHAR(100) NULL,
+    `batch_id` BIGINT UNSIGNED NOT NULL,
+    `source_raw_id` BIGINT UNSIGNED NOT NULL,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_cartera_operaciones_entidad_documento` (`entidad`, `documento_cliente`),
+    KEY `idx_cartera_operaciones_entidad_cuenta` (`entidad`, `cuenta`),
+    KEY `idx_cartera_operaciones_entidad_operacion` (`entidad`, `operacion`),
+    KEY `idx_cartera_operaciones_cosecha` (`cosecha`),
+    KEY `idx_cartera_operaciones_batch` (`batch_id`),
+    KEY `idx_cartera_operaciones_source` (`source_raw_id`),
+    KEY `idx_cartera_operaciones_vencimiento` (`fecha_vencimiento`),
+    KEY `idx_cartera_operaciones_departamento` (`departamento`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

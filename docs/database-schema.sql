@@ -24,6 +24,78 @@ CREATE DATABASE /*!32312 IF NOT EXISTS*/ `kp_bronze` /*!40100 DEFAULT CHARACTER 
 USE `kp_bronze`;
 
 --
+-- Table structure for table `raw_cartera_bbva`
+--
+
+DROP TABLE IF EXISTS `raw_cartera_bbva`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `raw_cartera_bbva` (
+  `CODCENTRAL` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CONTRATO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CLAVE` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DESJUDICIA` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DOCUMENTO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `UGA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TERRITORIO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NOMBRE` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MONEDA` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Suma de Importes` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Suma de INTERES` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Suma de MORA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `OFICINA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NOMB_OF` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FECHAVEN` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PRODUCTO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DESCPROD` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipodoc` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `numdoc` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `direccion` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `REFE` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `referencia1` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `referencia2` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ubicacion` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `codpostal` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ubigeo` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `dpto` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `provincia` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `distrito` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipofono1` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `prefijo1` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fono1` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `extension1` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipofono2` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `prefijo2` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fono2` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `extension2` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipofono3` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `prefijo3` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fono3` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `extension3` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipofono4` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `prefijo4` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fono4` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `extension4` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipofono5` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `prefijo5` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fono5` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `extension5` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NOMB_ESTUD` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nomb_est_saehost` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `COSECHA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `raw_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_row` bigint(20) unsigned NOT NULL,
+  `source_file` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `row_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `ingested_at` datetime NOT NULL,
+  PRIMARY KEY (`raw_id`),
+  KEY `idx_raw_cartera_bbva_batch_row` (`batch_id`,`source_row`),
+  KEY `idx_raw_cartera_bbva_row_hash` (`row_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `raw_pagos`
 --
 
@@ -47,7 +119,7 @@ CREATE TABLE `raw_pagos` (
   PRIMARY KEY (`raw_id`),
   KEY `idx_raw_pagos_row_hash` (`row_hash`),
   KEY `idx_raw_pagos_batch_id` (`batch_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=509 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -65,6 +137,121 @@ CREATE TABLE `raw_pagos` (
 CREATE DATABASE /*!32312 IF NOT EXISTS*/ `kp_silver` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */;
 
 USE `kp_silver`;
+
+--
+-- Table structure for table `cartera_contactos`
+--
+
+DROP TABLE IF EXISTS `cartera_contactos`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cartera_contactos` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `operacion_id` bigint(20) unsigned NOT NULL,
+  `documento_cliente` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entidad` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `telefono` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tipo` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `prefijo` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `extension` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `orden` tinyint(3) unsigned NOT NULL,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_raw_id` bigint(20) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_cartera_contactos_operacion` (`operacion_id`),
+  KEY `idx_cartera_contactos_entidad_documento` (`entidad`,`documento_cliente`),
+  KEY `idx_cartera_contactos_telefono` (`telefono`),
+  KEY `idx_cartera_contactos_batch` (`batch_id`),
+  KEY `idx_cartera_contactos_source` (`source_raw_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cartera_direcciones`
+--
+
+DROP TABLE IF EXISTS `cartera_direcciones`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cartera_direcciones` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `operacion_id` bigint(20) unsigned NOT NULL,
+  `documento_cliente` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entidad` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tipo_direccion` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `direccion` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `referencia` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `referencia1` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `referencia2` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ubicacion` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `codigo_postal` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ubigeo` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `departamento` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `provincia` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `distrito` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_raw_id` bigint(20) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_cartera_direcciones_operacion` (`operacion_id`),
+  KEY `idx_cartera_direcciones_entidad_documento` (`entidad`,`documento_cliente`),
+  KEY `idx_cartera_direcciones_ubigeo` (`ubigeo`),
+  KEY `idx_cartera_direcciones_departamento` (`departamento`),
+  KEY `idx_cartera_direcciones_batch` (`batch_id`),
+  KEY `idx_cartera_direcciones_source` (`source_raw_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cartera_operaciones`
+--
+
+DROP TABLE IF EXISTS `cartera_operaciones`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cartera_operaciones` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `entidad` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `cosecha` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `documento_cliente` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tipo_documento` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cuenta` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `operacion` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `identificador_origen` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nombre_cliente` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `moneda` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `saldo_capital` decimal(15,2) DEFAULT NULL,
+  `deuda_total` decimal(15,2) DEFAULT NULL,
+  `interes` decimal(15,2) DEFAULT NULL,
+  `mora` decimal(15,2) DEFAULT NULL,
+  `fecha_castigo` date DEFAULT NULL,
+  `fecha_desembolso` date DEFAULT NULL,
+  `fecha_vencimiento` date DEFAULT NULL,
+  `dias_atraso` int(11) DEFAULT NULL,
+  `producto` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `descripcion_producto` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `agencia` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `oficina` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `territorio` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ubigeo` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `departamento` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `provincia` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `distrito` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_raw_id` bigint(20) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_cartera_operaciones_entidad_documento` (`entidad`,`documento_cliente`),
+  KEY `idx_cartera_operaciones_entidad_cuenta` (`entidad`,`cuenta`),
+  KEY `idx_cartera_operaciones_entidad_operacion` (`entidad`,`operacion`),
+  KEY `idx_cartera_operaciones_cosecha` (`cosecha`),
+  KEY `idx_cartera_operaciones_batch` (`batch_id`),
+  KEY `idx_cartera_operaciones_source` (`source_raw_id`),
+  KEY `idx_cartera_operaciones_vencimiento` (`fecha_vencimiento`),
+  KEY `idx_cartera_operaciones_departamento` (`departamento`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Temporary table structure for view `v_pagos_actuales`
@@ -180,7 +367,7 @@ CREATE TABLE `failed_jobs` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`),
   KEY `failed_jobs_connection_queue_failed_at_index` (`connection`,`queue`,`failed_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -193,6 +380,8 @@ DROP TABLE IF EXISTS `import_batch`;
 CREATE TABLE `import_batch` (
   `batch_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `tipo` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entidad` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `perfil_version` varchar(20) CHARACTER SET ascii DEFAULT NULL,
   `origen` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `archivo` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `archivo_original` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -217,8 +406,10 @@ CREATE TABLE `import_batch` (
   KEY `idx_fecha_inicio` (`fecha_inicio`),
   KEY `idx_import_batch_origen` (`origen`),
   KEY `idx_import_batch_usuario` (`usuario`),
-  KEY `idx_import_batch_archivo_sha256` (`archivo_sha256`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY `idx_import_batch_archivo_sha256` (`archivo_sha256`),
+  KEY `idx_import_batch_tipo_entidad_perfil` (`tipo`,`entidad`,`perfil_version`),
+  KEY `idx_import_batch_entidad` (`entidad`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -240,7 +431,7 @@ CREATE TABLE `import_error` (
   KEY `idx_import_error_batch_row` (`batch_id`,`numero_fila`),
   KEY `idx_import_error_numero_fila` (`numero_fila`),
   CONSTRAINT `fk_import_error_batch` FOREIGN KEY (`batch_id`) REFERENCES `import_batch` (`batch_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=116 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -282,7 +473,7 @@ CREATE TABLE `jobs` (
   `created_at` int(10) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `jobs_queue_index` (`queue`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -321,7 +512,7 @@ CREATE TABLE `pago_documento_resolucion` (
   KEY `idx_documento_nuevo` (`documento_nuevo`),
   KEY `idx_fecha_modificacion` (`fecha_modificacion`),
   KEY `idx_pago_resolucion_raw_activo` (`raw_pago_id`,`activo`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -401,6 +592,22 @@ CREATE DATABASE /*!32312 IF NOT EXISTS*/ `kp_gold` /*!40100 DEFAULT CHARACTER SE
 USE `kp_gold`;
 
 --
+-- Temporary table structure for view `v_gestiones_macro_12m`
+--
+
+DROP TABLE IF EXISTS `v_gestiones_macro_12m`;
+/*!50001 DROP VIEW IF EXISTS `v_gestiones_macro_12m`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+/*!50001 CREATE VIEW `v_gestiones_macro_12m` AS SELECT 
+ 1 AS `PERIODO`,
+ 1 AS `DIA`,
+ 1 AS `HORA`,
+ 1 AS `ASESOR`,
+ 1 AS `GESTIONES`*/;
+SET character_set_client = @saved_cs_client;
+
+--
 -- Dumping events for database 'kp_gold'
 --
 
@@ -415,6 +622,293 @@ USE `kp_gold`;
 CREATE DATABASE /*!32312 IF NOT EXISTS*/ `kpinvest_konnexia` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */;
 
 USE `kpinvest_konnexia`;
+
+--
+-- Table structure for table `cc_agendamientos`
+--
+
+DROP TABLE IF EXISTS `cc_agendamientos`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cc_agendamientos` (
+  `agendamiento_id` varchar(24) NOT NULL,
+  `tipo` text,
+  `estado` varchar(20) DEFAULT NULL,
+  `prioridad` text,
+  `fecha_programada` datetime(6) DEFAULT NULL,
+  `zona_horaria` text,
+  `asunto` text,
+  `comentario` longtext,
+  `contacto_id` text,
+  `contacto_nombre` text,
+  `telefono` varchar(40) DEFAULT NULL,
+  `identificador_cliente` text,
+  `campana_id` varchar(24) DEFAULT NULL,
+  `campana_nombre` text,
+  `hub_id` text,
+  `lista_id` text,
+  `interaccion_id` text,
+  `ultima_interaccion_id` text,
+  `agente_id` varchar(24) DEFAULT NULL,
+  `agente_nombre` text,
+  `creado_por` text,
+  `intentos` int(11) DEFAULT NULL,
+  `ultimo_intento` datetime(6) DEFAULT NULL,
+  `fecha_completado` datetime(6) DEFAULT NULL,
+  `completado_por` text,
+  `motivo_cancelacion` text,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  `campos_extra` json DEFAULT NULL,
+  PRIMARY KEY (`agendamiento_id`),
+  KEY `idx_cc_agendamientos_estado` (`estado`),
+  KEY `idx_cc_agendamientos_fecha_programada` (`fecha_programada`),
+  KEY `idx_cc_agendamientos_telefono` (`telefono`),
+  KEY `idx_cc_agendamientos_campana_id` (`campana_id`),
+  KEY `idx_cc_agendamientos_agente_id` (`agente_id`),
+  KEY `idx_cc_agendamientos_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cc_interacciones`
+--
+
+DROP TABLE IF EXISTS `cc_interacciones`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cc_interacciones` (
+  `interaccion_id` varchar(24) NOT NULL,
+  `call_id` varchar(64) DEFAULT NULL,
+  `canal` varchar(20) DEFAULT NULL,
+  `direccion` text,
+  `tipo_llamada` text,
+  `hub_tipo` text,
+  `estado` text,
+  `resultado` text,
+  `telefono` varchar(40) DEFAULT NULL,
+  `identificador_cliente` text,
+  `tipo_identificador` text,
+  `nombre_cliente` text,
+  `contacto_id` text,
+  `cliente_id` varchar(24) DEFAULT NULL,
+  `crm_registro_id` text,
+  `campana_id` varchar(24) DEFAULT NULL,
+  `campana_nombre` text,
+  `hub_id` text,
+  `lista_id` text,
+  `conector_id` text,
+  `portafolio_id` varchar(40) DEFAULT NULL,
+  `portafolio_nombre` text,
+  `agente_id` varchar(24) DEFAULT NULL,
+  `agente_nombre` text,
+  `agentes_ids` json DEFAULT NULL,
+  `tipificacion` text,
+  `tipificacion_n1` text,
+  `tipificacion_n2` text,
+  `tipificacion_n3` text,
+  `comentario` longtext,
+  `duracion_seg` int(11) DEFAULT NULL,
+  `cola_seg` int(11) DEFAULT NULL,
+  `hold_seg` int(11) DEFAULT NULL,
+  `wrapup_seg` int(11) DEFAULT NULL,
+  `transferencias` int(11) DEFAULT NULL,
+  `tiene_grabacion` tinyint(1) DEFAULT NULL,
+  `grabacion_url` longtext,
+  `tiene_transcripcion` tinyint(1) DEFAULT NULL,
+  `alerta_palabras` tinyint(1) DEFAULT NULL,
+  `bot_skill` text,
+  `bot_resultado` text,
+  `bot_turnos` int(11) DEFAULT NULL,
+  `inicio` datetime(6) DEFAULT NULL,
+  `fin` datetime(6) DEFAULT NULL,
+  `ultimo_mensaje` datetime(6) DEFAULT NULL,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  `campos_extra` json DEFAULT NULL,
+  PRIMARY KEY (`interaccion_id`),
+  KEY `idx_cc_interacciones_call_id` (`call_id`),
+  KEY `idx_cc_interacciones_canal` (`canal`),
+  KEY `idx_cc_interacciones_telefono` (`telefono`),
+  KEY `idx_cc_interacciones_cliente_id` (`cliente_id`),
+  KEY `idx_cc_interacciones_campana_id` (`campana_id`),
+  KEY `idx_cc_interacciones_portafolio_id` (`portafolio_id`),
+  KEY `idx_cc_interacciones_agente_id` (`agente_id`),
+  KEY `idx_cc_interacciones_inicio` (`inicio`),
+  KEY `idx_cc_interacciones_created_at` (`created_at`),
+  KEY `idx_cc_interacciones_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cc_llamadas`
+--
+
+DROP TABLE IF EXISTS `cc_llamadas`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cc_llamadas` (
+  `llamada_id` varchar(24) NOT NULL,
+  `call_id` varchar(64) DEFAULT NULL,
+  `session_id` text,
+  `direccion` text,
+  `tipo_llamada` text,
+  `numero_origen` text,
+  `origen_numero` text,
+  `nombre_origen` text,
+  `destino` varchar(64) DEFAULT NULL,
+  `numero_marcado` text,
+  `campana_id` varchar(24) DEFAULT NULL,
+  `hub_id` varchar(24) DEFAULT NULL,
+  `hub_nombre` text,
+  `hub_tipo` text,
+  `cola_id` text,
+  `cola_nombre` text,
+  `portafolio_id` varchar(40) DEFAULT NULL,
+  `portafolio_nombre` text,
+  `agente_id` varchar(24) DEFAULT NULL,
+  `agente_nombre` text,
+  `contacto_id` text,
+  `lista_id` text,
+  `lista_nombre` text,
+  `inicio` datetime(6) DEFAULT NULL,
+  `timbrado` datetime(6) DEFAULT NULL,
+  `contestada` datetime(6) DEFAULT NULL,
+  `contestada_agente` datetime(6) DEFAULT NULL,
+  `conectada` datetime(6) DEFAULT NULL,
+  `fin` datetime(6) DEFAULT NULL,
+  `duracion_seg` int(11) DEFAULT NULL,
+  `timbrado_seg` int(11) DEFAULT NULL,
+  `conversacion_seg` int(11) DEFAULT NULL,
+  `hold_seg` int(11) DEFAULT NULL,
+  `cola_seg` int(11) DEFAULT NULL,
+  `estado` text,
+  `resultado` varchar(32) DEFAULT NULL,
+  `sip_codigo` int(11) DEFAULT NULL,
+  `sip_motivo` text,
+  `sip_descripcion` text,
+  `causa_corte` text,
+  `cortado_por` text,
+  `intentos` int(11) DEFAULT NULL,
+  `vsae_resultado` text,
+  `vsae_confianza` int(11) DEFAULT NULL,
+  `vsae_duracion_ms` int(11) DEFAULT NULL,
+  `grabacion_url` longtext,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  `campos_extra` json DEFAULT NULL,
+  PRIMARY KEY (`llamada_id`),
+  KEY `idx_cc_llamadas_call_id` (`call_id`),
+  KEY `idx_cc_llamadas_destino` (`destino`),
+  KEY `idx_cc_llamadas_campana_id` (`campana_id`),
+  KEY `idx_cc_llamadas_hub_id` (`hub_id`),
+  KEY `idx_cc_llamadas_portafolio_id` (`portafolio_id`),
+  KEY `idx_cc_llamadas_agente_id` (`agente_id`),
+  KEY `idx_cc_llamadas_inicio` (`inicio`),
+  KEY `idx_cc_llamadas_fin` (`fin`),
+  KEY `idx_cc_llamadas_resultado` (`resultado`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cc_promesas`
+--
+
+DROP TABLE IF EXISTS `cc_promesas`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cc_promesas` (
+  `promesa_id` varchar(24) NOT NULL,
+  `tipo` text,
+  `estado` varchar(20) DEFAULT NULL,
+  `monto` decimal(16,2) DEFAULT NULL,
+  `moneda` text,
+  `fecha_promesa` datetime(6) DEFAULT NULL,
+  `tipificacion` text,
+  `comentario` longtext,
+  `contacto_id` text,
+  `contacto_nombre` text,
+  `telefono` varchar(40) DEFAULT NULL,
+  `identificador_cliente` text,
+  `campana_id` varchar(24) DEFAULT NULL,
+  `campana_nombre` text,
+  `hub_id` text,
+  `lista_id` text,
+  `interaccion_id` varchar(24) DEFAULT NULL,
+  `agendamiento_id` text,
+  `agente_id` varchar(24) DEFAULT NULL,
+  `agente_nombre` text,
+  `creado_por` text,
+  `fecha_cierre` datetime(6) DEFAULT NULL,
+  `cerrado_por` text,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  `campos_extra` json DEFAULT NULL,
+  PRIMARY KEY (`promesa_id`),
+  KEY `idx_cc_promesas_estado` (`estado`),
+  KEY `idx_cc_promesas_fecha_promesa` (`fecha_promesa`),
+  KEY `idx_cc_promesas_telefono` (`telefono`),
+  KEY `idx_cc_promesas_campana_id` (`campana_id`),
+  KEY `idx_cc_promesas_interaccion_id` (`interaccion_id`),
+  KEY `idx_cc_promesas_agente_id` (`agente_id`),
+  KEY `idx_cc_promesas_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cc_tmo_diario`
+--
+
+DROP TABLE IF EXISTS `cc_tmo_diario`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cc_tmo_diario` (
+  `fecha` date NOT NULL,
+  `agente_id` varchar(24) NOT NULL,
+  `agente_nombre` text,
+  `primer_ingreso` datetime(6) DEFAULT NULL,
+  `ultima_salida` datetime(6) DEFAULT NULL,
+  `conexion_seg` int(11) DEFAULT NULL,
+  `disponible_seg` int(11) DEFAULT NULL,
+  `timbrando_seg` int(11) DEFAULT NULL,
+  `en_llamada_seg` int(11) DEFAULT NULL,
+  `saliente_seg` int(11) DEFAULT NULL,
+  `ocupado_seg` int(11) DEFAULT NULL,
+  `hold_seg` int(11) DEFAULT NULL,
+  `wrapup_seg` int(11) DEFAULT NULL,
+  `break_seg` int(11) DEFAULT NULL,
+  `refrigerio_seg` int(11) DEFAULT NULL,
+  `bano_seg` int(11) DEFAULT NULL,
+  `reunion_seg` int(11) DEFAULT NULL,
+  `capacitacion_seg` int(11) DEFAULT NULL,
+  `coaching_seg` int(11) DEFAULT NULL,
+  `tecnico_seg` int(11) DEFAULT NULL,
+  `backoffice_seg` int(11) DEFAULT NULL,
+  `desconectado_seg` int(11) DEFAULT NULL,
+  `productivo_seg` int(11) DEFAULT NULL,
+  `no_productivo_seg` int(11) DEFAULT NULL,
+  `interno_seg` int(11) DEFAULT NULL,
+  `estados_personalizados_seg` json DEFAULT NULL,
+  `interacciones` int(11) DEFAULT NULL,
+  `entrantes` int(11) DEFAULT NULL,
+  `salientes` int(11) DEFAULT NULL,
+  `conversacion_total_seg` int(11) DEFAULT NULL,
+  `hold_total_seg` int(11) DEFAULT NULL,
+  `wrapup_total_seg` int(11) DEFAULT NULL,
+  `aht_seg` decimal(12,2) DEFAULT NULL,
+  `att_seg` decimal(12,2) DEFAULT NULL,
+  `acw_promedio_seg` decimal(12,2) DEFAULT NULL,
+  `hold_promedio_seg` decimal(12,2) DEFAULT NULL,
+  `ocupacion_pct` decimal(7,2) DEFAULT NULL,
+  `utilizacion_pct` decimal(7,2) DEFAULT NULL,
+  `productividad_pct` decimal(7,2) DEFAULT NULL,
+  `contactos_hora` decimal(10,2) DEFAULT NULL,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  PRIMARY KEY (`fecha`,`agente_id`),
+  KEY `idx_cc_tmo_diario_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `cob_agendas`
@@ -917,6 +1411,24 @@ USE `kp_control`;
 USE `kp_gold`;
 
 --
+-- Final view structure for view `v_gestiones_macro_12m`
+--
+
+/*!50001 DROP VIEW IF EXISTS `v_gestiones_macro_12m`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`jesus_admin`@`127.0.0.1` SQL SECURITY DEFINER */
+/*!50001 VIEW `v_gestiones_macro_12m` AS select date_format(convert_tz(`kpinvest_konnexia`.`cob_gestiones`.`created_at`,'+00:00','-05:00'),'%Y%m') AS `PERIODO`,cast(convert_tz(`kpinvest_konnexia`.`cob_gestiones`.`created_at`,'+00:00','-05:00') as date) AS `DIA`,hour(convert_tz(`kpinvest_konnexia`.`cob_gestiones`.`created_at`,'+00:00','-05:00')) AS `HORA`,coalesce(nullif(trim(`kpinvest_konnexia`.`cob_gestiones`.`agente_nombre`),''),'SIN ASESOR') AS `ASESOR`,count(0) AS `GESTIONES` from `kpinvest_konnexia`.`cob_gestiones` where ((`kpinvest_konnexia`.`cob_gestiones`.`created_at` >= convert_tz((date_format(convert_tz(utc_timestamp(),'+00:00','-05:00'),'%Y-%m-01') - interval 12 month),'-05:00','+00:00')) and (`kpinvest_konnexia`.`cob_gestiones`.`created_at` < utc_timestamp())) group by date_format(convert_tz(`kpinvest_konnexia`.`cob_gestiones`.`created_at`,'+00:00','-05:00'),'%Y%m'),cast(convert_tz(`kpinvest_konnexia`.`cob_gestiones`.`created_at`,'+00:00','-05:00') as date),hour(convert_tz(`kpinvest_konnexia`.`cob_gestiones`.`created_at`,'+00:00','-05:00')),coalesce(nullif(trim(`kpinvest_konnexia`.`cob_gestiones`.`agente_nombre`),''),'SIN ASESOR') */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
 -- Current Database: `kpinvest_konnexia`
 --
 
@@ -931,4 +1443,4 @@ USE `kpinvest_konnexia`;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-05  7:19:09
+-- Dump completed on 2026-10-06 21:05:09

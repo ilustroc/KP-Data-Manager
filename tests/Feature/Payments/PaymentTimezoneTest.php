@@ -28,7 +28,7 @@ class PaymentTimezoneTest extends PaymentFeatureTestCase
         ], 'sqlite');
     }
 
-    public function test_utc_dates_are_presented_in_america_lima(): void
+    public function test_visible_audit_date_uses_america_lima_and_ingestion_date_stays_hidden(): void
     {
         $rawId = $this->createPayment([
             'DOCUMENTO' => null,
@@ -42,7 +42,7 @@ class PaymentTimezoneTest extends PaymentFeatureTestCase
         $response = $this->actingAs($user)->get(route('payments.show', $rawId));
 
         $response
-            ->assertSeeText('04/10/2026 21:24:51')
+            ->assertDontSeeText('04/10/2026 21:24:51')
             ->assertSeeText('04/10/2026 22:33:58')
             ->assertDontSeeText('05/10/2026 03:33:58');
     }

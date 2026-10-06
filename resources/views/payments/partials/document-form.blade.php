@@ -13,7 +13,7 @@
     <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="border-b border-slate-100 px-5 py-4">
             <h3 class="font-semibold text-slate-900">Información del pago</h3>
-            <p class="mt-1 text-sm text-slate-500">Datos de solo lectura provenientes de Silver.</p>
+            <p class="mt-1 text-sm text-slate-500">Datos de referencia para confirmar la asociación.</p>
         </div>
         <dl class="grid sm:grid-cols-2">
             @foreach ([
@@ -22,7 +22,6 @@
                 ['label' => 'Monto', 'value' => $payment->MONTO !== null ? 'S/ '.number_format((float) $payment->MONTO, 2, '.', ',') : '—'],
                 ['label' => 'Recaudo', 'value' => filled($payment->RECAUDO) ? $payment->RECAUDO : '—'],
                 ['label' => 'Operación', 'value' => filled($payment->OPERACION) ? $payment->OPERACION : '—', 'mono' => true],
-                ['label' => 'Raw ID', 'value' => $payment->raw_id, 'mono' => true],
             ] as $item)
                 <div class="border-b border-slate-100 px-5 py-4 sm:border-r">
                     <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ $item['label'] }}</dt>
@@ -32,7 +31,7 @@
         </dl>
         <div class="px-5 py-4">
             <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Comentario</p>
-            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{{ filled($payment->COMENTARIO) ? $payment->COMENTARIO : '—' }}</p>
+            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{{ filled($payment->COMENTARIO) ? $payment->COMENTARIO : 'Sin comentario' }}</p>
         </div>
     </section>
 

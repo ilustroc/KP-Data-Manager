@@ -32,7 +32,6 @@ class CorrectionIndexRequest extends FormRequest
             ],
             'documento' => ['nullable', 'string', 'max:30'],
             'usuario' => ['nullable', 'string', 'max:100'],
-            'raw_pago_id' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', Rule::in(config('payments.pagination.allowed'))],
         ];
     }
@@ -48,8 +47,6 @@ class CorrectionIndexRequest extends FormRequest
             'fecha_cambio_hasta.after_or_equal' => 'La fecha de cambio hasta debe ser igual o posterior a la fecha desde.',
             'documento.max' => 'El documento no puede exceder 30 caracteres.',
             'usuario.max' => 'El usuario no puede exceder 100 caracteres.',
-            'raw_pago_id.integer' => 'El Raw ID debe ser un número entero.',
-            'raw_pago_id.min' => 'El Raw ID debe ser mayor que cero.',
             'per_page.in' => 'La cantidad por página debe ser 25, 50 o 100.',
         ];
     }

@@ -9,7 +9,9 @@ from pymysql.cursors import DictCursor
 
 from .config import Settings
 from .domain.models import (
+    BBVA_SOURCE_COLUMNS,
     BatchRecord,
+    BbvaPortfolioRecord,
     PaymentRecord,
     ProcessingStats,
     RowError,
@@ -37,8 +39,8 @@ class MySqlDatabase:
 
     def get_batch(self, batch_id: int) -> BatchRecord | None:
         sql = f"""
-            SELECT batch_id, tipo, estado, archivo, archivo_original,
-                   archivo_ruta, archivo_extension, archivo_sha256
+            SELECT batch_id, tipo, entidad, perfil_version, estado, archivo,
+                   archivo_original, archivo_ruta, archivo_extension, archivo_sha256
             FROM `{self.settings.control_database}`.`import_batch`
             WHERE batch_id = %s
             LIMIT 1
@@ -58,6 +60,8 @@ class MySqlDatabase:
             archivo_ruta=str(row["archivo_ruta"] or ""),
             archivo_extension=str(extension).lower(),
             archivo_sha256=None if row["archivo_sha256"] is None else str(row["archivo_sha256"]),
+            entidad=None if row["entidad"] is None else str(row["entidad"]),
+            perfil_version=None if row["perfil_version"] is None else str(row["perfil_version"]),
         )
 
     def claim_batch(self, batch_id: int, started_at: datetime) -> bool:
@@ -66,7 +70,7 @@ class MySqlDatabase:
             SET estado = 'PROCESANDO', fecha_inicio = %s, fecha_fin = NULL,
                 filas_archivo = 0, filas_insertadas = 0,
                 filas_duplicadas = 0, filas_error = 0, mensaje_error = NULL
-            WHERE batch_id = %s AND estado = 'PENDIENTE' AND tipo = 'PAGOS'
+            WHERE batch_id = %s AND estado = 'PENDIENTE'
         """
         with self.connection.cursor() as cursor:
             affected = cursor.execute(sql, (started_at, batch_id))
@@ -120,6 +124,191 @@ class MySqlDatabase:
                     batch_id,
                 ),
             )
+
+    def insert_cartera_chunk(
+        self,
+        records: Sequence[BbvaPortfolioRecord],
+        errors: Sequence[RowError],
+    ) -> None:
+        quoted_source_columns = ", ".join(f"`{column}`" for column in BBVA_SOURCE_COLUMNS)
+        raw_placeholders = ", ".join(["%s"] * (len(BBVA_SOURCE_COLUMNS) + 5))
+        raw_sql = f"""
+            INSERT INTO `{self.settings.bronze_database}`.`raw_cartera_bbva`
+                ({quoted_source_columns}, `batch_id`, `source_row`, `source_file`,
+                 `row_hash`, `ingested_at`)
+            VALUES ({raw_placeholders})
+        """
+        operation_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_operaciones`
+                (`entidad`, `cosecha`, `documento_cliente`, `tipo_documento`, `cuenta`,
+                 `operacion`, `identificador_origen`, `nombre_cliente`, `moneda`,
+                 `saldo_capital`, `deuda_total`, `interes`, `mora`, `fecha_castigo`,
+                 `fecha_desembolso`, `fecha_vencimiento`, `dias_atraso`, `producto`,
+                 `descripcion_producto`, `agencia`, `oficina`, `territorio`, `ubigeo`,
+                 `departamento`, `provincia`, `distrito`, `batch_id`, `source_raw_id`,
+                 `created_at`)
+            VALUES ({", ".join(["%s"] * 29)})
+        """
+        contact_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_contactos`
+                (`operacion_id`, `documento_cliente`, `entidad`, `telefono`, `tipo`,
+                 `prefijo`, `extension`, `orden`, `batch_id`, `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 11)})
+        """
+        address_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_direcciones`
+                (`operacion_id`, `documento_cliente`, `entidad`, `tipo_direccion`,
+                 `direccion`, `referencia`, `referencia1`, `referencia2`, `ubicacion`,
+                 `codigo_postal`, `ubigeo`, `departamento`, `provincia`, `distrito`,
+                 `batch_id`, `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 17)})
+        """
+        error_sql = f"""
+            INSERT INTO `{self.settings.control_database}`.`import_error`
+                (`batch_id`, `numero_fila`, `campo`, `valor`, `error`, `created_at`)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+
+        self.connection.begin()
+        try:
+            with self.connection.cursor() as cursor:
+                if records:
+                    cursor.executemany(raw_sql, [record.raw_insert_tuple() for record in records])
+                    raw_ids = self._raw_ids_by_source_row(cursor, records)
+                    cursor.executemany(
+                        operation_sql,
+                        [
+                            self._operation_tuple(record, raw_ids[record.source_row])
+                            for record in records
+                        ],
+                    )
+                    operation_ids = self._operation_ids_by_raw_id(cursor, records, raw_ids)
+                    contacts = []
+                    addresses = []
+                    for record in records:
+                        raw_id = raw_ids[record.source_row]
+                        operation_id = operation_ids[raw_id]
+                        for contact in record.contacts:
+                            contacts.append(
+                                (
+                                    operation_id,
+                                    record.operation.documento_cliente,
+                                    record.operation.entidad,
+                                    contact.telefono,
+                                    contact.tipo,
+                                    contact.prefijo,
+                                    contact.extension,
+                                    contact.orden,
+                                    record.batch_id,
+                                    raw_id,
+                                    record.ingested_at,
+                                )
+                            )
+                        if record.address is not None:
+                            address = record.address
+                            addresses.append(
+                                (
+                                    operation_id,
+                                    record.operation.documento_cliente,
+                                    record.operation.entidad,
+                                    address.tipo_direccion,
+                                    address.direccion,
+                                    address.referencia,
+                                    address.referencia1,
+                                    address.referencia2,
+                                    address.ubicacion,
+                                    address.codigo_postal,
+                                    address.ubigeo,
+                                    address.departamento,
+                                    address.provincia,
+                                    address.distrito,
+                                    record.batch_id,
+                                    raw_id,
+                                    record.ingested_at,
+                                )
+                            )
+                    if contacts:
+                        cursor.executemany(contact_sql, contacts)
+                    if addresses:
+                        cursor.executemany(address_sql, addresses)
+                if errors:
+                    cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def _raw_ids_by_source_row(
+        self,
+        cursor: DictCursor,
+        records: Sequence[BbvaPortfolioRecord],
+    ) -> dict[int, int]:
+        source_rows = [record.source_row for record in records]
+        placeholders = ", ".join(["%s"] * len(source_rows))
+        sql = f"""
+            SELECT raw_id, source_row
+            FROM `{self.settings.bronze_database}`.`raw_cartera_bbva`
+            WHERE batch_id = %s AND source_row IN ({placeholders})
+        """
+        cursor.execute(sql, (records[0].batch_id, *source_rows))
+        result = {int(row["source_row"]): int(row["raw_id"]) for row in cursor.fetchall()}
+        if len(result) != len(records):
+            raise RuntimeError("No se pudieron correlacionar todas las filas Bronze del chunk.")
+        return result
+
+    def _operation_ids_by_raw_id(
+        self,
+        cursor: DictCursor,
+        records: Sequence[BbvaPortfolioRecord],
+        raw_ids: dict[int, int],
+    ) -> dict[int, int]:
+        values = list(raw_ids.values())
+        placeholders = ", ".join(["%s"] * len(values))
+        sql = f"""
+            SELECT id, source_raw_id
+            FROM `{self.settings.silver_database}`.`cartera_operaciones`
+            WHERE batch_id = %s AND source_raw_id IN ({placeholders})
+        """
+        cursor.execute(sql, (records[0].batch_id, *values))
+        result = {int(row["source_raw_id"]): int(row["id"]) for row in cursor.fetchall()}
+        if len(result) != len(records):
+            raise RuntimeError("No se pudieron correlacionar todas las operaciones Silver del chunk.")
+        return result
+
+    @staticmethod
+    def _operation_tuple(record: BbvaPortfolioRecord, raw_id: int) -> tuple[object, ...]:
+        operation = record.operation
+        return (
+            operation.entidad,
+            operation.cosecha,
+            operation.documento_cliente,
+            operation.tipo_documento,
+            operation.cuenta,
+            operation.operacion,
+            operation.identificador_origen,
+            operation.nombre_cliente,
+            operation.moneda,
+            operation.saldo_capital,
+            None,
+            operation.interes,
+            operation.mora,
+            None,
+            None,
+            operation.fecha_vencimiento,
+            None,
+            operation.producto,
+            operation.descripcion_producto,
+            operation.agencia,
+            operation.oficina,
+            operation.territorio,
+            operation.ubigeo,
+            operation.departamento,
+            operation.provincia,
+            operation.distrito,
+            record.batch_id,
+            raw_id,
+            record.ingested_at,
+        )
 
     def finish_batch(
         self,

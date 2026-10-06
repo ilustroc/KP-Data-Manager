@@ -11,6 +11,7 @@ import pytest
 from src.config import Settings
 from src.domain.models import (
     BatchRecord,
+    BbvaPortfolioRecord,
     PaymentRecord,
     ProcessingStats,
     RowError,
@@ -54,6 +55,8 @@ class FakeDatabase:
             archivo_ruta=self.batch.archivo_ruta,
             archivo_extension=self.batch.archivo_extension,
             archivo_sha256=self.batch.archivo_sha256,
+            entidad=self.batch.entidad,
+            perfil_version=self.batch.perfil_version,
         )
         return True
 
@@ -98,6 +101,24 @@ class FakeDatabase:
         self.closed = True
 
 
+class FakeCarteraDatabase(FakeDatabase):
+    def __init__(self, batch: BatchRecord | None, *, fail_on_chunk: int | None = None) -> None:
+        super().__init__(batch, fail_on_chunk=fail_on_chunk)
+        self.portfolio_records: list[BbvaPortfolioRecord] = []
+
+    def insert_cartera_chunk(
+        self,
+        records: Sequence[BbvaPortfolioRecord],
+        errors: Sequence[RowError],
+    ) -> None:
+        call_number = len(self.chunk_sizes) + 1
+        if self.fail_on_chunk == call_number:
+            raise RuntimeError("simulated chunk failure")
+        self.chunk_sizes.append((len(records), len(errors)))
+        self.portfolio_records.extend(records)
+        self.errors.extend(errors)
+
+
 def copy_stats(stats: ProcessingStats) -> ProcessingStats:
     return ProcessingStats(
         file_rows=stats.file_rows,
@@ -116,6 +137,7 @@ def settings(tmp_path: Path) -> Settings:
         db_password="test-only",
         control_database="kp_control_test",
         bronze_database="kp_bronze_test",
+        silver_database="kp_silver_test",
         storage_root=tmp_path / "imports",
         insert_batch_size=5,
         progress_update_every=5,
@@ -142,13 +164,18 @@ def make_batch(
     extension: str = "csv",
     sha256: str | None = None,
     original_name: str = "pagos.csv",
+    tipo: str = "PAGOS",
+    entidad: str | None = None,
+    perfil_version: str | None = None,
 ) -> BatchRecord:
     return BatchRecord(
         batch_id=batch_id,
-        tipo="PAGOS",
+        tipo=tipo,
         estado=status,
         archivo_original=original_name,
         archivo_ruta=relative_path,
         archivo_extension=extension,
         archivo_sha256=sha256,
+        entidad=entidad,
+        perfil_version=perfil_version,
     )

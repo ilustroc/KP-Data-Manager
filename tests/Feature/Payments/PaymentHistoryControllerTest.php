@@ -8,11 +8,13 @@ class PaymentHistoryControllerTest extends PaymentFeatureTestCase
 {
     public function test_read_only_user_can_view_complete_history(): void
     {
+        $auditor = User::factory()->create(['name' => 'Jesús Gabriel Garcia Palacios']);
         $rawId = $this->createPayment(['DOCUMENTO' => null]);
         $this->createResolution($rawId, [
             'documento_anterior' => null,
             'documento_nuevo' => '3241',
             'activo' => 0,
+            'usuario' => 'user:'.$auditor->id,
         ]);
         $this->createResolution($rawId, [
             'documento_anterior' => '3241',
@@ -20,6 +22,7 @@ class PaymentHistoryControllerTest extends PaymentFeatureTestCase
             'motivo' => 'Corrección de DNI',
             'fecha_modificacion' => '2026-12-20 14:20:00',
             'activo' => 1,
+            'usuario' => 'user:'.$auditor->id,
         ]);
         $user = User::factory()->readOnly()->create();
 
@@ -29,7 +32,9 @@ class PaymentHistoryControllerTest extends PaymentFeatureTestCase
             ->assertViewIs('payments.history')
             ->assertSeeText('3241')
             ->assertSeeText('74900019')
-            ->assertSeeText('Corrección de DNI');
+            ->assertSeeText('Corrección de DNI')
+            ->assertSeeText('Jesús Gabriel Garcia Palacios')
+            ->assertDontSeeText('user:'.$auditor->id);
     }
 
     public function test_history_is_ordered_by_change_date_and_resolution_id_descending(): void
