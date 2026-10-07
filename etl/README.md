@@ -158,7 +158,7 @@ Mapeo de identidad BBVA confirmado:
 
 `deuda_total` permanece `NULL`: no se deriva de capital, interés y mora sin una definición de negocio aprobada. Los cinco bloques de teléfonos se expanden a filas y la dirección BBVA se registra como `PRINCIPAL`. `row_hash` es una huella SHA-256 no única y no elimina registros.
 
-Caja Arequipa v1 exige 67 posiciones exactas y conserva por separado las dos columnas fuente llamadas `NRO_DOC_TIT`. Su documento efectivo requiere coincidencia o usa la única ocurrencia informada. Las fechas numéricas se convierten con el epoch del workbook, los teléfonos `TEL_TIT` y `TEL_GES` se expanden por `|`, y los datos específicos se distribuyen entre detalle, avales y hasta seis garantías. Todas las escrituras de una fila válida permanecen dentro de la transacción corta del chunk.
+Caja Arequipa v1 exige 66 posiciones exactas, termina en `COSECHA` y conserva por separado las dos columnas fuente llamadas `NRO_DOC_TIT`. Su documento efectivo requiere coincidencia o usa la única ocurrencia informada. Como la fuente no incluye un identificador adicional, `cartera_operaciones.identificador_origen` queda `NULL`. Las fechas numéricas se convierten con el epoch del workbook, los teléfonos `TEL_TIT` y `TEL_GES` se expanden por `|`, y los datos específicos se distribuyen entre detalle, avales y hasta seis garantías. Todas las escrituras de una fila válida permanecen dentro de la transacción corta del chunk.
 
 Una caída no borra chunks ya confirmados. Las filas quedan trazables por `batch_id`; una futura operación controlada de rollback podría localizarlas con `WHERE batch_id = X`, pero esta fase no implementa borrados ni reprocesamiento.
 

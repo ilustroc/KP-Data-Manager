@@ -116,7 +116,7 @@ def test_caja_chunk_persists_bronze_common_and_specific_rows_in_one_transaction(
     assert "cartera_avales" in sql_text
     assert "cartera_garantias" in sql_text
     raw_rows = next(rows for sql, rows in statements.items() if "raw_cartera_caja_arequipa" in sql)
-    assert len(raw_rows[0]) == 72
+    assert len(raw_rows[0]) == 71
 
 
 def test_caja_chunk_rolls_back_when_a_specific_child_insert_fails(settings):
@@ -135,7 +135,7 @@ def test_caja_bronze_ddl_uses_text_for_long_fields_and_preserves_source_order():
     ddl_path = Path(__file__).parents[2] / "database/sql/013_create_raw_cartera_caja_arequipa.sql"
     ddl = ddl_path.read_text(encoding="utf-8")
     declared_columns = re.findall(r"^\s+`([^`]+)`\s+", ddl, flags=re.MULTILINE)
-    source_columns = declared_columns[:67]
+    source_columns = declared_columns[:66]
     long_text_fields = {
         "DIR_LEGAL",
         "REF_LEGAL",
@@ -148,6 +148,16 @@ def test_caja_bronze_ddl_uses_text_for_long_fields_and_preserves_source_order():
     }
 
     assert source_columns == list(CAJA_AREQUIPA_BRONZE_COLUMNS)
-    assert len(source_columns) == 67
+    assert len(source_columns) == 66
+    assert source_columns[-1] == "COSECHA"
+    assert "CADENA" not in source_columns
+    assert declared_columns[66:] == [
+        "raw_id",
+        "batch_id",
+        "source_row",
+        "source_file",
+        "row_hash",
+        "ingested_at",
+    ]
     for field in long_text_fields:
         assert re.search(rf"^\s+`{field}` TEXT NULL,$", ddl, flags=re.MULTILINE)

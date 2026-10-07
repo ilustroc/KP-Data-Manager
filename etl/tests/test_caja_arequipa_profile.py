@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -8,6 +10,7 @@ from openpyxl.utils.datetime import CALENDAR_WINDOWS_1900
 
 from src.domain.errors import StructuralFileError
 from src.domain.models import (
+    CAJA_AREQUIPA_BRONZE_COLUMNS,
     CAJA_AREQUIPA_SOURCE_COLUMNS,
     CAJA_AREQUIPA_SOURCE_HEADERS,
     CellValue,
@@ -80,7 +83,6 @@ def source_values(**overrides: object) -> dict[str, CellValue]:
             "PROVINCIA": "AREQUIPA",
             "DISTRITO": "AREQUIPA",
             "COSECHA": "2026-10",
-            "CADENA": "CAD-001",
         }
     )
     values.update(overrides)
@@ -97,12 +99,19 @@ def normalize(**overrides: object):
     )
 
 
-def test_header_requires_exact_67_positions_and_preserves_duplicate_document():
+def test_header_requires_exact_66_positions_and_preserves_duplicate_document():
     mapping = CajaArequipaV1Profile().build_header_map(
         [f" {header} " for header in CAJA_AREQUIPA_SOURCE_HEADERS]
     )
 
-    assert len(mapping) == 67
+    assert len(CAJA_AREQUIPA_SOURCE_HEADERS) == 66
+    assert len(CAJA_AREQUIPA_SOURCE_COLUMNS) == 66
+    assert len(CAJA_AREQUIPA_BRONZE_COLUMNS) == 66
+    assert CAJA_AREQUIPA_SOURCE_HEADERS[-1] == "COSECHA"
+    assert CAJA_AREQUIPA_SOURCE_COLUMNS[-1] == "COSECHA"
+    assert CAJA_AREQUIPA_BRONZE_COLUMNS[-1] == "COSECHA"
+    assert "CADENA" not in CAJA_AREQUIPA_SOURCE_HEADERS
+    assert len(mapping) == 66
     assert mapping["NRO_DOC_TIT_1"] == 0
     assert mapping["NRO_DOC_TIT_2"] == 30
 
@@ -124,6 +133,13 @@ def test_header_rejects_missing_extra_or_reordered_columns(headers: tuple[str, .
         CajaArequipaV1Profile().build_header_map(headers)
 
 
+def test_obsolete_67_column_structure_with_cadena_is_rejected():
+    obsolete_headers = (*CAJA_AREQUIPA_SOURCE_HEADERS, "CADENA")
+
+    with pytest.raises(StructuralFileError, match="66 columnas"):
+        CajaArequipaV1Profile().build_header_map(obsolete_headers)
+
+
 def test_normalization_maps_common_and_specific_silver_models():
     record, errors = normalize()
 
@@ -133,7 +149,7 @@ def test_normalization_maps_common_and_specific_silver_models():
     assert record.operation.documento_cliente == "00001234"
     assert record.operation.cuenta == "001804548"
     assert record.operation.operacion == "002435410"
-    assert record.operation.identificador_origen == "CAD-001"
+    assert record.operation.identificador_origen is None
     assert record.operation.moneda == "PEN"
     assert record.operation.saldo_capital == Decimal("1250.50")
     assert record.operation.deuda_total == Decimal("1290.25")
@@ -144,10 +160,16 @@ def test_normalization_maps_common_and_specific_silver_models():
     assert record.operation.dias_atraso == 30
     assert record.detail.provision == Decimal("100.0000")
     assert record.detail.fecha_ingreso_judicial is None
-    assert len(record.source_values) == 67
+    assert len(record.source_values) == 66
     assert record.batch_id == 44
     assert record.source_row == 2
     assert len(record.row_hash) == 64
+    expected_payload = json.dumps(
+        ["cartera:caja_arequipa:v1", *record.source_values],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    assert record.row_hash == hashlib.sha256(expected_payload.encode("utf-8")).hexdigest()
 
 
 @pytest.mark.parametrize(

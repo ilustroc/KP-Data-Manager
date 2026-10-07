@@ -169,7 +169,6 @@ CREATE TABLE `raw_cartera_caja_arequipa` (
   `PROVINCIA` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `DISTRITO` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `COSECHA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `CADENA` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `raw_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `batch_id` bigint(20) unsigned NOT NULL,
   `source_row` bigint(20) unsigned NOT NULL,
@@ -179,7 +178,7 @@ CREATE TABLE `raw_cartera_caja_arequipa` (
   PRIMARY KEY (`raw_id`),
   KEY `idx_raw_cartera_caja_batch_row` (`batch_id`,`source_row`),
   KEY `idx_raw_cartera_caja_row_hash` (`row_hash`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=62563 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -255,7 +254,7 @@ CREATE TABLE `cartera_avales` (
   KEY `idx_cartera_avales_documento_aval` (`documento_aval`),
   KEY `idx_cartera_avales_batch` (`batch_id`),
   KEY `idx_cartera_avales_source` (`source_raw_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9694 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -294,7 +293,7 @@ CREATE TABLE `cartera_caja_arequipa_detalle` (
   KEY `idx_caja_arequipa_detalle_batch` (`batch_id`),
   KEY `idx_caja_arequipa_detalle_source` (`source_raw_id`),
   KEY `idx_caja_arequipa_detalle_codigo_sbs` (`codigo_sbs`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=62563 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -323,7 +322,7 @@ CREATE TABLE `cartera_contactos` (
   KEY `idx_cartera_contactos_telefono` (`telefono`),
   KEY `idx_cartera_contactos_batch` (`batch_id`),
   KEY `idx_cartera_contactos_source` (`source_raw_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4556 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=71825 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -359,7 +358,7 @@ CREATE TABLE `cartera_direcciones` (
   KEY `idx_cartera_direcciones_departamento` (`departamento`),
   KEY `idx_cartera_direcciones_batch` (`batch_id`),
   KEY `idx_cartera_direcciones_source` (`source_raw_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2724 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=114390 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -386,7 +385,7 @@ CREATE TABLE `cartera_garantias` (
   KEY `idx_cartera_garantias_tipo` (`tipo_garantia`),
   KEY `idx_cartera_garantias_batch` (`batch_id`),
   KEY `idx_cartera_garantias_source` (`source_raw_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=180338 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -436,7 +435,7 @@ CREATE TABLE `cartera_operaciones` (
   KEY `idx_cartera_operaciones_source` (`source_raw_id`),
   KEY `idx_cartera_operaciones_vencimiento` (`fecha_vencimiento`),
   KEY `idx_cartera_operaciones_departamento` (`departamento`)
-) ENGINE=InnoDB AUTO_INCREMENT=2724 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=65286 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -553,7 +552,7 @@ CREATE TABLE `failed_jobs` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`),
   KEY `failed_jobs_connection_queue_failed_at_index` (`connection`,`queue`,`failed_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -595,7 +594,7 @@ CREATE TABLE `import_batch` (
   KEY `idx_import_batch_archivo_sha256` (`archivo_sha256`),
   KEY `idx_import_batch_tipo_entidad_perfil` (`tipo`,`entidad`,`perfil_version`),
   KEY `idx_import_batch_entidad` (`entidad`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -617,7 +616,7 @@ CREATE TABLE `import_error` (
   KEY `idx_import_error_batch_row` (`batch_id`,`numero_fila`),
   KEY `idx_import_error_numero_fila` (`numero_fila`),
   CONSTRAINT `fk_import_error_batch` FOREIGN KEY (`batch_id`) REFERENCES `import_batch` (`batch_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=116 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=205 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -659,7 +658,7 @@ CREATE TABLE `jobs` (
   `created_at` int(10) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `jobs_queue_index` (`queue`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1629,4 +1628,4 @@ USE `kpinvest_konnexia`;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-07  0:59:07
+-- Dump completed on 2026-10-07  1:49:57

@@ -55,7 +55,7 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
         expected = list(self.expected_headers)
         if len(actual) != len(expected):
             raise StructuralFileError(
-                f"Caja Arequipa v1 requiere exactamente 67 columnas; se recibieron {len(actual)}."
+                f"Caja Arequipa v1 requiere exactamente 66 columnas; se recibieron {len(actual)}."
             )
         for index, (actual_header, expected_header) in enumerate(
             zip(actual, expected, strict=True),
@@ -126,7 +126,6 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
             "PROVINCIA": lambda cell: normalize_optional_text(cell, 100, "PROVINCIA"),
             "DISTRITO": lambda cell: normalize_optional_text(cell, 100, "DISTRITO"),
             "COSECHA": lambda cell: normalize_optional_text(cell, 100, "COSECHA"),
-            "CADENA": lambda cell: normalize_optional_text(cell, 100, "CADENA"),
         }
         for field, rule in rules.items():
             self._apply_rule(
@@ -175,7 +174,7 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
             tipo_documento=normalized["TIP_DOC_TIT"],
             cuenta=normalized["CUENTA"],
             operacion=normalized["OPERACION"],
-            identificador_origen=normalized["CADENA"],
+            identificador_origen=None,
             nombre_cliente=normalized["TITULAR"],
             moneda=normalized["MONEDA"],
             saldo_capital=normalized["SALDO_CAPITAL"],
