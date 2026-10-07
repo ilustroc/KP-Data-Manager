@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 from zipfile import BadZipFile
@@ -46,7 +47,7 @@ class CsvCarteraParser:
                         column: CellValue(values[index] if index < len(values) else None)
                         for column, index in header_map.items()
                     }
-                    for column in self.profile.expected_headers:
+                    for column in self.profile.field_names:
                         source_values.setdefault(column, CellValue(None))
                     if all(
                         cell.value is None or str(cell.value).strip() == ""
@@ -97,10 +98,12 @@ class XlsxCarteraParser:
 
             for cells in row_iterator:
                 source_values = {
-                    column: self._cell_value(cells[index]) if index < len(cells) else CellValue(None)
+                    column: self._cell_value(cells[index], workbook.epoch)
+                    if index < len(cells)
+                    else CellValue(None)
                     for column, index in header_map.items()
                 }
-                for column in self.profile.expected_headers:
+                for column in self.profile.field_names:
                     source_values.setdefault(column, CellValue(None))
                 if all(
                     cell.value is None or str(cell.value).strip() == ""
@@ -113,9 +116,10 @@ class XlsxCarteraParser:
             workbook.close()
 
     @staticmethod
-    def _cell_value(cell: Any) -> CellValue:
+    def _cell_value(cell: Any, workbook_epoch: datetime) -> CellValue:
         return CellValue(
             value=cell.value,
             number_format=cell.number_format,
             is_xlsx_float=isinstance(cell.value, float),
+            workbook_epoch=workbook_epoch,
         )

@@ -10,9 +10,12 @@ from pymysql.cursors import DictCursor
 from .config import Settings
 from .domain.models import (
     BBVA_SOURCE_COLUMNS,
+    CAJA_AREQUIPA_BRONZE_COLUMNS,
     BatchRecord,
     BbvaPortfolioRecord,
+    CajaArequipaPortfolioRecord,
     PaymentRecord,
+    PortfolioRecord,
     ProcessingStats,
     RowError,
 )
@@ -127,13 +130,62 @@ class MySqlDatabase:
 
     def insert_cartera_chunk(
         self,
-        records: Sequence[BbvaPortfolioRecord],
+        records: Sequence[PortfolioRecord],
         errors: Sequence[RowError],
     ) -> None:
-        quoted_source_columns = ", ".join(f"`{column}`" for column in BBVA_SOURCE_COLUMNS)
-        raw_placeholders = ", ".join(["%s"] * (len(BBVA_SOURCE_COLUMNS) + 5))
+        error_sql = f"""
+            INSERT INTO `{self.settings.control_database}`.`import_error`
+                (`batch_id`, `numero_fila`, `campo`, `valor`, `error`, `created_at`)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+
+        self.connection.begin()
+        try:
+            with self.connection.cursor() as cursor:
+                if records:
+                    record_type = type(records[0])
+                    if any(type(record) is not record_type for record in records):
+                        raise RuntimeError("Un chunk de cartera no puede mezclar perfiles.")
+                    if record_type is BbvaPortfolioRecord:
+                        self._insert_portfolio_records(
+                            cursor,
+                            records,
+                            "raw_cartera_bbva",
+                            BBVA_SOURCE_COLUMNS,
+                        )
+                    elif record_type is CajaArequipaPortfolioRecord:
+                        narrowed_records = [
+                            record
+                            for record in records
+                            if isinstance(record, CajaArequipaPortfolioRecord)
+                        ]
+                        correlations = self._insert_portfolio_records(
+                            cursor,
+                            narrowed_records,
+                            "raw_cartera_caja_arequipa",
+                            CAJA_AREQUIPA_BRONZE_COLUMNS,
+                        )
+                        self._insert_caja_arequipa_children(cursor, narrowed_records, correlations)
+                    else:
+                        raise RuntimeError("Tipo de registro de cartera no soportado.")
+                if errors:
+                    cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def _insert_portfolio_records(
+        self,
+        cursor: DictCursor,
+        records: Sequence[PortfolioRecord],
+        raw_table: str,
+        source_columns: tuple[str, ...],
+    ) -> dict[int, tuple[int, int]]:
+        quoted_source_columns = ", ".join(f"`{column}`" for column in source_columns)
+        raw_placeholders = ", ".join(["%s"] * (len(source_columns) + 5))
         raw_sql = f"""
-            INSERT INTO `{self.settings.bronze_database}`.`raw_cartera_bbva`
+            INSERT INTO `{self.settings.bronze_database}`.`{raw_table}`
                 ({quoted_source_columns}, `batch_id`, `source_row`, `source_file`,
                  `row_hash`, `ingested_at`)
             VALUES ({raw_placeholders})
@@ -163,91 +215,129 @@ class MySqlDatabase:
                  `batch_id`, `source_raw_id`, `created_at`)
             VALUES ({", ".join(["%s"] * 17)})
         """
-        error_sql = f"""
-            INSERT INTO `{self.settings.control_database}`.`import_error`
-                (`batch_id`, `numero_fila`, `campo`, `valor`, `error`, `created_at`)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """
-
-        self.connection.begin()
-        try:
-            with self.connection.cursor() as cursor:
-                if records:
-                    cursor.executemany(raw_sql, [record.raw_insert_tuple() for record in records])
-                    raw_ids = self._raw_ids_by_source_row(cursor, records)
-                    cursor.executemany(
-                        operation_sql,
-                        [
-                            self._operation_tuple(record, raw_ids[record.source_row])
-                            for record in records
-                        ],
+        cursor.executemany(raw_sql, [record.raw_insert_tuple() for record in records])
+        raw_ids = self._raw_ids_by_source_row(cursor, records, raw_table)
+        cursor.executemany(
+            operation_sql,
+            [self._operation_tuple(record, raw_ids[record.source_row]) for record in records],
+        )
+        operation_ids = self._operation_ids_by_raw_id(cursor, records, raw_ids)
+        contacts = []
+        addresses = []
+        correlations: dict[int, tuple[int, int]] = {}
+        for record in records:
+            raw_id = raw_ids[record.source_row]
+            operation_id = operation_ids[raw_id]
+            correlations[record.source_row] = (raw_id, operation_id)
+            for contact in record.contacts:
+                contacts.append(
+                    (
+                        operation_id, record.operation.documento_cliente,
+                        record.operation.entidad, contact.telefono, contact.tipo,
+                        contact.prefijo, contact.extension, contact.orden, record.batch_id,
+                        raw_id, record.ingested_at,
                     )
-                    operation_ids = self._operation_ids_by_raw_id(cursor, records, raw_ids)
-                    contacts = []
-                    addresses = []
-                    for record in records:
-                        raw_id = raw_ids[record.source_row]
-                        operation_id = operation_ids[raw_id]
-                        for contact in record.contacts:
-                            contacts.append(
-                                (
-                                    operation_id,
-                                    record.operation.documento_cliente,
-                                    record.operation.entidad,
-                                    contact.telefono,
-                                    contact.tipo,
-                                    contact.prefijo,
-                                    contact.extension,
-                                    contact.orden,
-                                    record.batch_id,
-                                    raw_id,
-                                    record.ingested_at,
-                                )
-                            )
-                        if record.address is not None:
-                            address = record.address
-                            addresses.append(
-                                (
-                                    operation_id,
-                                    record.operation.documento_cliente,
-                                    record.operation.entidad,
-                                    address.tipo_direccion,
-                                    address.direccion,
-                                    address.referencia,
-                                    address.referencia1,
-                                    address.referencia2,
-                                    address.ubicacion,
-                                    address.codigo_postal,
-                                    address.ubigeo,
-                                    address.departamento,
-                                    address.provincia,
-                                    address.distrito,
-                                    record.batch_id,
-                                    raw_id,
-                                    record.ingested_at,
-                                )
-                            )
-                    if contacts:
-                        cursor.executemany(contact_sql, contacts)
-                    if addresses:
-                        cursor.executemany(address_sql, addresses)
-                if errors:
-                    cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
-            self.connection.commit()
-        except Exception:
-            self.connection.rollback()
-            raise
+                )
+            for address in record.addresses:
+                addresses.append(
+                    (
+                        operation_id, record.operation.documento_cliente,
+                        record.operation.entidad, address.tipo_direccion, address.direccion,
+                        address.referencia, address.referencia1, address.referencia2,
+                        address.ubicacion, address.codigo_postal, address.ubigeo,
+                        address.departamento, address.provincia, address.distrito,
+                        record.batch_id, raw_id, record.ingested_at,
+                    )
+                )
+        if contacts:
+            cursor.executemany(contact_sql, contacts)
+        if addresses:
+            cursor.executemany(address_sql, addresses)
+        return correlations
+
+    def _insert_caja_arequipa_children(
+        self,
+        cursor: DictCursor,
+        records: Sequence[CajaArequipaPortfolioRecord],
+        correlations: dict[int, tuple[int, int]],
+    ) -> None:
+        detail_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_caja_arequipa_detalle`
+                (`operacion_id`, `documento_cliente`, `analista`, `tipo_contable`,
+                 `fecha_ultimo_pago`, `cuo_pag`, `actividad`, `nro_avales_reportado`,
+                 `codigo_sbs`, `monto_desembolso`, `icv`, `seguros`, `penalidad`,
+                 `otros_rubros`, `calificacion_sbs`, `provision`,
+                 `fecha_ingreso_judicial`, `refinanciado`, `batch_id`, `source_raw_id`,
+                 `created_at`)
+            VALUES ({", ".join(["%s"] * 21)})
+        """
+        guarantor_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_avales`
+                (`operacion_id`, `documento_cliente`, `entidad`, `orden`, `nombre_aval`,
+                 `tipo_documento`, `documento_aval`, `telefono`, `direccion`, `referencia`,
+                 `distrito`, `cantidad_reportada`, `batch_id`, `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 15)})
+        """
+        guarantee_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_garantias`
+                (`operacion_id`, `documento_cliente`, `entidad`, `orden`, `tipo_garantia`,
+                 `monto`, `batch_id`, `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 9)})
+        """
+        details = []
+        guarantors = []
+        guarantees = []
+        for record in records:
+            raw_id, operation_id = correlations[record.source_row]
+            detail = record.detail
+            details.append(
+                (
+                    operation_id, record.operation.documento_cliente, detail.analista,
+                    detail.tipo_contable, detail.fecha_ultimo_pago, detail.cuo_pag,
+                    detail.actividad, detail.nro_avales_reportado, detail.codigo_sbs,
+                    detail.monto_desembolso, detail.icv, detail.seguros, detail.penalidad,
+                    detail.otros_rubros, detail.calificacion_sbs, detail.provision,
+                    detail.fecha_ingreso_judicial, detail.refinanciado, record.batch_id,
+                    raw_id, record.ingested_at,
+                )
+            )
+            if record.guarantor is not None:
+                guarantor = record.guarantor
+                guarantors.append(
+                    (
+                        operation_id, record.operation.documento_cliente,
+                        record.operation.entidad, guarantor.orden, guarantor.nombre_aval,
+                        guarantor.tipo_documento, guarantor.documento_aval,
+                        guarantor.telefono, guarantor.direccion, guarantor.referencia,
+                        guarantor.distrito, guarantor.cantidad_reportada, record.batch_id,
+                        raw_id, record.ingested_at,
+                    )
+                )
+            for guarantee in record.guarantees:
+                guarantees.append(
+                    (
+                        operation_id, record.operation.documento_cliente,
+                        record.operation.entidad, guarantee.orden, guarantee.tipo_garantia,
+                        guarantee.monto, record.batch_id, raw_id, record.ingested_at,
+                    )
+                )
+        cursor.executemany(detail_sql, details)
+        if guarantors:
+            cursor.executemany(guarantor_sql, guarantors)
+        if guarantees:
+            cursor.executemany(guarantee_sql, guarantees)
 
     def _raw_ids_by_source_row(
         self,
         cursor: DictCursor,
-        records: Sequence[BbvaPortfolioRecord],
+        records: Sequence[PortfolioRecord],
+        raw_table: str,
     ) -> dict[int, int]:
         source_rows = [record.source_row for record in records]
         placeholders = ", ".join(["%s"] * len(source_rows))
         sql = f"""
             SELECT raw_id, source_row
-            FROM `{self.settings.bronze_database}`.`raw_cartera_bbva`
+            FROM `{self.settings.bronze_database}`.`{raw_table}`
             WHERE batch_id = %s AND source_row IN ({placeholders})
         """
         cursor.execute(sql, (records[0].batch_id, *source_rows))
@@ -259,7 +349,7 @@ class MySqlDatabase:
     def _operation_ids_by_raw_id(
         self,
         cursor: DictCursor,
-        records: Sequence[BbvaPortfolioRecord],
+        records: Sequence[PortfolioRecord],
         raw_ids: dict[int, int],
     ) -> dict[int, int]:
         values = list(raw_ids.values())
@@ -276,7 +366,7 @@ class MySqlDatabase:
         return result
 
     @staticmethod
-    def _operation_tuple(record: BbvaPortfolioRecord, raw_id: int) -> tuple[object, ...]:
+    def _operation_tuple(record: PortfolioRecord, raw_id: int) -> tuple[object, ...]:
         operation = record.operation
         return (
             operation.entidad,
@@ -289,13 +379,13 @@ class MySqlDatabase:
             operation.nombre_cliente,
             operation.moneda,
             operation.saldo_capital,
-            None,
+            operation.deuda_total,
             operation.interes,
             operation.mora,
-            None,
-            None,
+            operation.fecha_castigo,
+            operation.fecha_desembolso,
             operation.fecha_vencimiento,
-            None,
+            operation.dias_atraso,
             operation.producto,
             operation.descripcion_producto,
             operation.agencia,

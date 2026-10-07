@@ -92,6 +92,93 @@ CREATE TABLE `raw_cartera_bbva` (
   PRIMARY KEY (`raw_id`),
   KEY `idx_raw_cartera_bbva_batch_row` (`batch_id`,`source_row`),
   KEY `idx_raw_cartera_bbva_row_hash` (`row_hash`)
+) ENGINE=InnoDB AUTO_INCREMENT=2724 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `raw_cartera_caja_arequipa`
+--
+
+DROP TABLE IF EXISTS `raw_cartera_caja_arequipa`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `raw_cartera_caja_arequipa` (
+  `NRO_DOC_TIT` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `AGENCIA` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ANALISTA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TITULAR` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CUENTA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `OPERACION` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIPO_CONTABLE` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_SBS` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MONEDA` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SALDO_CAPITAL` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FEC_ULT_PAG` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DIAS_ATRASO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CUO_PAG` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DIR_LEGAL` text COLLATE utf8mb4_unicode_ci,
+  `REF_LEGAL` text COLLATE utf8mb4_unicode_ci,
+  `DIS_LEGAL` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TEL_TIT` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DIR_GES` text COLLATE utf8mb4_unicode_ci,
+  `REF_GES` text COLLATE utf8mb4_unicode_ci,
+  `DIS_GES` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TEL_GES` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ACTIVIDAD` text COLLATE utf8mb4_unicode_ci,
+  `DIR_NEG` text COLLATE utf8mb4_unicode_ci,
+  `DIS_NEG` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NRO_AVALES` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NOM_AVAL` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DIR_AVAL` text COLLATE utf8mb4_unicode_ci,
+  `REF_AVAL` text COLLATE utf8mb4_unicode_ci,
+  `DIS_AVAL` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_DOC_TIT` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NRO_DOC_TIT_2` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Segunda ocurrencia de NRO_DOC_TIT en el encabezado fuente',
+  `TIP_DOC_AVAL` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `NRO_DOC_AVAL` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TEL_AVAL` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `COD_SBS` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FEC_DES` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_DES` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `INT_MORATORIO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `INT_COMP` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ICV` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `SEGUROS` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PENALIDAD` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `OTROS_RUBROS` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TOT_DEUDA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CAL_SBS` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PROVISION` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FEC_ING_JUD` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `FEC_ING_CAS` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `REFINANCIADO` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_GAR1` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_GAR1` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_GAR2` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_GAR2` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_GAR3` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_GAR3` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_GAR4` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_GAR4` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_GAR5` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_GAR5` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `TIP_GAR6` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `MTO_GAR6` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `UBIGEO` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DEPARTAMENTO` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `PROVINCIA` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DISTRITO` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `COSECHA` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CADENA` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `raw_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_row` bigint(20) unsigned NOT NULL,
+  `source_file` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `row_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `ingested_at` datetime NOT NULL,
+  PRIMARY KEY (`raw_id`),
+  KEY `idx_raw_cartera_caja_batch_row` (`batch_id`,`source_row`),
+  KEY `idx_raw_cartera_caja_row_hash` (`row_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -119,7 +206,7 @@ CREATE TABLE `raw_pagos` (
   PRIMARY KEY (`raw_id`),
   KEY `idx_raw_pagos_row_hash` (`row_hash`),
   KEY `idx_raw_pagos_batch_id` (`batch_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=509 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=540 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -137,6 +224,78 @@ CREATE TABLE `raw_pagos` (
 CREATE DATABASE /*!32312 IF NOT EXISTS*/ `kp_silver` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */;
 
 USE `kp_silver`;
+
+--
+-- Table structure for table `cartera_avales`
+--
+
+DROP TABLE IF EXISTS `cartera_avales`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cartera_avales` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `operacion_id` bigint(20) unsigned NOT NULL,
+  `documento_cliente` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entidad` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `orden` tinyint(3) unsigned NOT NULL,
+  `nombre_aval` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipo_documento` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `documento_aval` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `telefono` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `direccion` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `referencia` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `distrito` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cantidad_reportada` int(11) DEFAULT NULL,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_raw_id` bigint(20) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_cartera_avales_operacion` (`operacion_id`),
+  KEY `idx_cartera_avales_entidad_documento` (`entidad`,`documento_cliente`),
+  KEY `idx_cartera_avales_documento_aval` (`documento_aval`),
+  KEY `idx_cartera_avales_batch` (`batch_id`),
+  KEY `idx_cartera_avales_source` (`source_raw_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cartera_caja_arequipa_detalle`
+--
+
+DROP TABLE IF EXISTS `cartera_caja_arequipa_detalle`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cartera_caja_arequipa_detalle` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `operacion_id` bigint(20) unsigned NOT NULL,
+  `documento_cliente` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `analista` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tipo_contable` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fecha_ultimo_pago` date DEFAULT NULL,
+  `cuo_pag` int(11) DEFAULT NULL,
+  `actividad` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `nro_avales_reportado` int(11) DEFAULT NULL,
+  `codigo_sbs` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `monto_desembolso` decimal(15,2) DEFAULT NULL,
+  `icv` decimal(15,2) DEFAULT NULL,
+  `seguros` decimal(15,2) DEFAULT NULL,
+  `penalidad` decimal(15,2) DEFAULT NULL,
+  `otros_rubros` decimal(15,2) DEFAULT NULL,
+  `calificacion_sbs` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `provision` decimal(15,4) DEFAULT NULL,
+  `fecha_ingreso_judicial` date DEFAULT NULL,
+  `refinanciado` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_raw_id` bigint(20) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_caja_arequipa_detalle_operacion` (`operacion_id`),
+  KEY `idx_caja_arequipa_detalle_documento` (`documento_cliente`),
+  KEY `idx_caja_arequipa_detalle_batch` (`batch_id`),
+  KEY `idx_caja_arequipa_detalle_source` (`source_raw_id`),
+  KEY `idx_caja_arequipa_detalle_codigo_sbs` (`codigo_sbs`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `cartera_contactos`
@@ -164,7 +323,7 @@ CREATE TABLE `cartera_contactos` (
   KEY `idx_cartera_contactos_telefono` (`telefono`),
   KEY `idx_cartera_contactos_batch` (`batch_id`),
   KEY `idx_cartera_contactos_source` (`source_raw_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4556 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -200,6 +359,33 @@ CREATE TABLE `cartera_direcciones` (
   KEY `idx_cartera_direcciones_departamento` (`departamento`),
   KEY `idx_cartera_direcciones_batch` (`batch_id`),
   KEY `idx_cartera_direcciones_source` (`source_raw_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2724 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cartera_garantias`
+--
+
+DROP TABLE IF EXISTS `cartera_garantias`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cartera_garantias` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `operacion_id` bigint(20) unsigned NOT NULL,
+  `documento_cliente` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entidad` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `orden` tinyint(3) unsigned NOT NULL,
+  `tipo_garantia` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `monto` decimal(15,2) DEFAULT NULL,
+  `batch_id` bigint(20) unsigned NOT NULL,
+  `source_raw_id` bigint(20) unsigned NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_cartera_garantias_operacion` (`operacion_id`),
+  KEY `idx_cartera_garantias_entidad_documento` (`entidad`,`documento_cliente`),
+  KEY `idx_cartera_garantias_tipo` (`tipo_garantia`),
+  KEY `idx_cartera_garantias_batch` (`batch_id`),
+  KEY `idx_cartera_garantias_source` (`source_raw_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -250,7 +436,7 @@ CREATE TABLE `cartera_operaciones` (
   KEY `idx_cartera_operaciones_source` (`source_raw_id`),
   KEY `idx_cartera_operaciones_vencimiento` (`fecha_vencimiento`),
   KEY `idx_cartera_operaciones_departamento` (`departamento`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2724 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -367,7 +553,7 @@ CREATE TABLE `failed_jobs` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`),
   KEY `failed_jobs_connection_queue_failed_at_index` (`connection`,`queue`,`failed_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -409,7 +595,7 @@ CREATE TABLE `import_batch` (
   KEY `idx_import_batch_archivo_sha256` (`archivo_sha256`),
   KEY `idx_import_batch_tipo_entidad_perfil` (`tipo`,`entidad`,`perfil_version`),
   KEY `idx_import_batch_entidad` (`entidad`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -473,7 +659,7 @@ CREATE TABLE `jobs` (
   `created_at` int(10) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `jobs_queue_index` (`queue`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -512,7 +698,7 @@ CREATE TABLE `pago_documento_resolucion` (
   KEY `idx_documento_nuevo` (`documento_nuevo`),
   KEY `idx_fecha_modificacion` (`fecha_modificacion`),
   KEY `idx_pago_resolucion_raw_activo` (`raw_pago_id`,`activo`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1443,4 +1629,4 @@ USE `kpinvest_konnexia`;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-06 21:05:09
+-- Dump completed on 2026-10-07  0:59:07

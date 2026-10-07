@@ -25,6 +25,7 @@ class CellValue:
     value: Any
     number_format: str | None = None
     is_xlsx_float: bool = False
+    workbook_epoch: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,10 +133,14 @@ class PortfolioOperation:
     identificador_origen: str | None
     nombre_cliente: str | None
     moneda: str | None
-    saldo_capital: Decimal
+    saldo_capital: Decimal | None
+    deuda_total: Decimal | None
     interes: Decimal | None
     mora: Decimal | None
+    fecha_castigo: date | None
+    fecha_desembolso: date | None
     fecha_vencimiento: date | None
+    dias_atraso: int | None
     producto: str | None
     descripcion_producto: str | None
     agencia: str | None
@@ -193,10 +198,111 @@ class BbvaPortfolioRecord:
             self.ingested_at,
         )
 
+    @property
+    def addresses(self) -> tuple[PortfolioAddress, ...]:
+        return () if self.address is None else (self.address,)
+
+
+CAJA_AREQUIPA_SOURCE_HEADERS = (
+    "NRO_DOC_TIT", "AGENCIA", "ANALISTA", "TITULAR", "CUENTA", "OPERACION",
+    "TIPO_CONTABLE", "TIP_SBS", "MONEDA", "SALDO_CAPITAL", "FEC_ULT_PAG",
+    "DIAS_ATRASO", "CUO_PAG", "DIR_LEGAL", "REF_LEGAL", "DIS_LEGAL",
+    "TEL_TIT", "DIR_GES", "REF_GES", "DIS_GES", "TEL_GES", "ACTIVIDAD",
+    "DIR_NEG", "DIS_NEG", "NRO_AVALES", "NOM_AVAL", "DIR_AVAL", "REF_AVAL",
+    "DIS_AVAL", "TIP_DOC_TIT", "NRO_DOC_TIT", "TIP_DOC_AVAL", "NRO_DOC_AVAL",
+    "TEL_AVAL", "COD_SBS", "FEC_DES", "MTO_DES", "INT_MORATORIO", "INT_COMP",
+    "ICV", "SEGUROS", "PENALIDAD", "OTROS_RUBROS", "TOT_DEUDA", "CAL_SBS",
+    "PROVISION", "FEC_ING_JUD", "FEC_ING_CAS", "REFINANCIADO", "TIP_GAR1",
+    "MTO_GAR1", "TIP_GAR2", "MTO_GAR2", "TIP_GAR3", "MTO_GAR3", "TIP_GAR4",
+    "MTO_GAR4", "TIP_GAR5", "MTO_GAR5", "TIP_GAR6", "MTO_GAR6", "UBIGEO",
+    "DEPARTAMENTO", "PROVINCIA", "DISTRITO", "COSECHA", "CADENA",
+)
+
+CAJA_AREQUIPA_SOURCE_COLUMNS = (
+    "NRO_DOC_TIT_1",
+    *CAJA_AREQUIPA_SOURCE_HEADERS[1:30],
+    "NRO_DOC_TIT_2",
+    *CAJA_AREQUIPA_SOURCE_HEADERS[31:],
+)
+
+CAJA_AREQUIPA_BRONZE_COLUMNS = (
+    "NRO_DOC_TIT",
+    *CAJA_AREQUIPA_SOURCE_COLUMNS[1:],
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CajaArequipaDetail:
+    analista: str | None
+    tipo_contable: str | None
+    fecha_ultimo_pago: date | None
+    cuo_pag: int | None
+    actividad: str | None
+    nro_avales_reportado: int | None
+    codigo_sbs: str | None
+    monto_desembolso: Decimal | None
+    icv: Decimal | None
+    seguros: Decimal | None
+    penalidad: Decimal | None
+    otros_rubros: Decimal | None
+    calificacion_sbs: str | None
+    provision: Decimal | None
+    fecha_ingreso_judicial: date | None
+    refinanciado: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioGuarantor:
+    orden: int
+    nombre_aval: str | None
+    tipo_documento: str | None
+    documento_aval: str | None
+    telefono: str | None
+    direccion: str | None
+    referencia: str | None
+    distrito: str | None
+    cantidad_reportada: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioGuarantee:
+    orden: int
+    tipo_garantia: str | None
+    monto: Decimal | None
+
+
+@dataclass(frozen=True, slots=True)
+class CajaArequipaPortfolioRecord:
+    source_values: tuple[str | None, ...]
+    source_row: int
+    source_file: str
+    batch_id: int
+    row_hash: str
+    ingested_at: datetime
+    operation: PortfolioOperation
+    detail: CajaArequipaDetail
+    contacts: tuple[PortfolioContact, ...]
+    addresses: tuple[PortfolioAddress, ...]
+    guarantor: PortfolioGuarantor | None
+    guarantees: tuple[PortfolioGuarantee, ...]
+
+    def raw_insert_tuple(self) -> tuple[Any, ...]:
+        return (
+            *self.source_values,
+            self.batch_id,
+            self.source_row,
+            self.source_file,
+            self.row_hash,
+            self.ingested_at,
+        )
+
+
+PortfolioRecord = BbvaPortfolioRecord | CajaArequipaPortfolioRecord
+
 
 @dataclass(slots=True)
 class PortfolioChunk:
-    records: list[BbvaPortfolioRecord] = field(default_factory=list)
+    records: list[PortfolioRecord] = field(default_factory=list)
     errors: list[RowError] = field(default_factory=list)
     file_rows: int = 0
     error_rows: int = 0
@@ -289,6 +395,6 @@ class DatabasePort(Protocol):
 class CarteraDatabasePort(DatabasePort, Protocol):
     def insert_cartera_chunk(
         self,
-        records: Sequence[BbvaPortfolioRecord],
+        records: Sequence[PortfolioRecord],
         errors: Sequence[RowError],
     ) -> None: ...

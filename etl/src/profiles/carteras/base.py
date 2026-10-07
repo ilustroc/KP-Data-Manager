@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from ...domain.errors import StructuralFileError
-from ...domain.models import BbvaPortfolioRecord, RowError, SourceRow
+from ...domain.models import PortfolioRecord, RowError, SourceRow
 from ...domain.normalizers import normalize_header
 
 
@@ -16,6 +16,10 @@ class BaseCarteraProfile(ABC):
     expected_headers: tuple[str, ...]
     required_headers: frozenset[str]
     aliases: dict[str, str] = {}
+
+    @property
+    def field_names(self) -> tuple[str, ...]:
+        return self.expected_headers
 
     def build_header_map(self, header_values: Sequence[Any]) -> dict[str, int]:
         canonical_by_normalized = {
@@ -80,4 +84,4 @@ class BaseCarteraProfile(ABC):
         source_file: str,
         ingested_at: datetime,
         error_value_max_length: int,
-    ) -> tuple[BbvaPortfolioRecord | None, list[RowError]]: ...
+    ) -> tuple[PortfolioRecord | None, list[RowError]]: ...

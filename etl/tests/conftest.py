@@ -11,7 +11,6 @@ import pytest
 from src.config import Settings
 from src.domain.models import (
     BatchRecord,
-    BbvaPortfolioRecord,
     PaymentRecord,
     ProcessingStats,
     RowError,
@@ -104,11 +103,11 @@ class FakeDatabase:
 class FakeCarteraDatabase(FakeDatabase):
     def __init__(self, batch: BatchRecord | None, *, fail_on_chunk: int | None = None) -> None:
         super().__init__(batch, fail_on_chunk=fail_on_chunk)
-        self.portfolio_records: list[BbvaPortfolioRecord] = []
+        self.portfolio_records: list[object] = []
 
     def insert_cartera_chunk(
         self,
-        records: Sequence[BbvaPortfolioRecord],
+        records: Sequence[object],
         errors: Sequence[RowError],
     ) -> None:
         call_number = len(self.chunk_sizes) + 1

@@ -23,13 +23,13 @@ enum FinancialEntity: string
 
     public function isImplemented(): bool
     {
-        return $this === self::Bbva;
+        return in_array($this, [self::Bbva, self::CajaArequipa], true);
     }
 
     public function profileVersion(): string
     {
         return match ($this) {
-            self::Bbva => '1',
+            self::Bbva, self::CajaArequipa => '1',
             default => throw new \LogicException("La entidad {$this->value} aún no tiene un perfil implementado."),
         };
     }
