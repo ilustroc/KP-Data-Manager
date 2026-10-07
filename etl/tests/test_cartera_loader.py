@@ -4,9 +4,18 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
-from src.domain.models import BBVA_SOURCE_COLUMNS, CellValue, SourceRow
+import pytest
+
+from src.domain.models import (
+    BBVA_SOURCE_COLUMNS,
+    CAJA_AREQUIPA_SOURCE_COLUMNS,
+    CellValue,
+    SourceRow,
+)
+from src.domain.errors import StructuralFileError
 from src.loaders.cartera_loader import CarteraLoader
 from src.profiles.carteras.bbva import BbvaV1Profile
+from src.profiles.carteras.caja_arequipa import CajaArequipaV1Profile
 
 from .conftest import FakeCarteraDatabase, make_batch, stage_file
 
@@ -111,3 +120,93 @@ def test_bbva_loader_records_partial_row_error_and_completes_with_observations(s
     assert result.stats.inserted_rows == 1
     assert result.stats.error_rows == 1
     assert database.errors[0].field == "Suma de Importes"
+
+
+def test_caja_arequipa_loader_uses_existing_chunk_pipeline_and_traceability(settings, tmp_path: Path):
+    source = tmp_path / "caja.csv"
+    source.write_text("placeholder", encoding="utf-8")
+    _, fingerprint = stage_file(settings, source, "2026/10/16/caja.csv")
+    database = FakeCarteraDatabase(
+        make_batch(
+            relative_path="2026/10/16/caja.csv",
+            original_name="caja.csv",
+            sha256=fingerprint,
+            tipo="CARTERA",
+            entidad="CAJA_AREQUIPA",
+            perfil_version="1",
+        )
+    )
+    values = {column: CellValue(None) for column in CAJA_AREQUIPA_SOURCE_COLUMNS}
+    values.update(
+        {
+            "NRO_DOC_TIT_1": CellValue("00001234"),
+            "NRO_DOC_TIT_2": CellValue("00001234"),
+            "CUENTA": CellValue(1804548),
+            "OPERACION": CellValue(2435410),
+            "SALDO_CAPITAL": CellValue("100.00"),
+        }
+    )
+
+    class GeneratedParser:
+        def rows(self, path: Path):
+            yield SourceRow(2, values)
+
+    result = CarteraLoader(
+        database,
+        settings,
+        CajaArequipaV1Profile(),
+        clock=fixed_clock,
+        parsers={"csv": GeneratedParser()},
+    ).process(123)
+
+    assert result.status == "COMPLETADO"
+    assert result.stats.inserted_rows == 1
+    assert database.chunk_sizes == [(1, 0)]
+    record = database.portfolio_records[0]
+    assert record.operation.entidad == "CAJA_AREQUIPA"
+    assert record.source_row == 2
+    assert record.source_file == "caja.csv"
+
+
+def test_caja_arequipa_failed_chunk_is_not_counted_as_inserted(settings, tmp_path: Path):
+    source = tmp_path / "caja.csv"
+    source.write_text("placeholder", encoding="utf-8")
+    _, fingerprint = stage_file(settings, source, "2026/10/16/caja.csv")
+    database = FakeCarteraDatabase(
+        make_batch(
+            relative_path="2026/10/16/caja.csv",
+            original_name="caja.csv",
+            sha256=fingerprint,
+            tipo="CARTERA",
+            entidad="CAJA_AREQUIPA",
+            perfil_version="1",
+        ),
+        fail_on_chunk=1,
+    )
+    values = {column: CellValue(None) for column in CAJA_AREQUIPA_SOURCE_COLUMNS}
+    values.update(
+        {
+            "NRO_DOC_TIT_1": CellValue("00001234"),
+            "NRO_DOC_TIT_2": CellValue("00001234"),
+            "CUENTA": CellValue("001"),
+            "OPERACION": CellValue("002"),
+        }
+    )
+
+    class GeneratedParser:
+        def rows(self, path: Path):
+            yield SourceRow(2, values)
+
+    with pytest.raises(StructuralFileError):
+        CarteraLoader(
+            database,
+            settings,
+            CajaArequipaV1Profile(),
+            clock=fixed_clock,
+            parsers={"csv": GeneratedParser()},
+        ).process(123)
+
+    assert database.portfolio_records == []
+    assert database.final_stats is not None
+    assert database.final_stats.inserted_rows == 0
+    assert database.failed_message is not None

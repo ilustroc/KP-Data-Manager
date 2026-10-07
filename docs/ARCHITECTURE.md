@@ -654,7 +654,7 @@ Estas decisiones no deben inventarse durante el desarrollo:
 8. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
 9. Privilegios definitivos del usuario de aplicación si las vistas se convierten a `SQL SECURITY INVOKER`.
 
-## 18. Carteras — fundación multientidad y BBVA v1
+## 18. Carteras — fundación multientidad, BBVA v1 y Caja Arequipa v1
 
 La cartera no comparte una tabla Bronze universal. Cada entidad conserva su contrato físico y su evolución de versiones, mientras Silver expone un modelo común:
 
@@ -667,10 +667,13 @@ raw_cartera_<entidad> (Bronze propio e inmutable)
    ↓
 cartera_operaciones
    ├── cartera_contactos
-   └── cartera_direcciones
+   ├── cartera_direcciones
+   ├── cartera_caja_arequipa_detalle (solo Caja Arequipa)
+   ├── cartera_avales (cuando la fuente los expone)
+   └── cartera_garantias (cuando la fuente las expone)
 ```
 
-`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Así una carga se identifica como `CARTERA / BBVA / 1` y una futura modificación de formato crea `BBVA / 2` sin reinterpretar archivos históricos.
+`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1` y `CARTERA / CAJA_AREQUIPA / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
 
 ### 18.1 Contrato multientidad
 
@@ -682,7 +685,7 @@ cartera_operaciones
 | Confianza | `DNI` | `Cuenta Cliente` | `Operación` |
 | Wandoo | `DNI` | exactamente `"0" + DNI` | `Numero de Prestamo` |
 
-Solo BBVA v1 está implementado. Las demás filas documentan contratos futuros y no habilitan loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
+BBVA v1 y Caja Arequipa v1 están implementados. Las demás filas documentan contratos futuros y no habilitan loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
 
 ### 18.2 Perfil BBVA v1
 
@@ -730,3 +733,13 @@ El perfil declara encabezados, tipos, reglas y mapping. La política estructural
 Los identificadores permanecen texto y conservan ceros, guiones y formatos alfanuméricos. `deuda_total` queda `NULL`; no se aplica una fórmula no confirmada. Cada fila válida produce primero su Raw y luego su operación/contactos/dirección dentro de la misma transacción corta. `source_raw_id` conserva la navegación exacta a Bronze. No se agregan foreign keys entre esquemas ni restricciones únicas de negocio en esta fase; se usan índices de trazabilidad y consulta.
 
 El snapshot resuelve la estructura física, pero no el estado de los datos ni los planes de ejecución. Cualquier cambio DDL se entrega como script revisable con precondiciones, impacto, verificación y rollback; no se aplica implícitamente desde una request web.
+
+### 18.3 Perfil Caja Arequipa v1
+
+El perfil exige exactamente 66 columnas, terminadas en `COSECHA`, y valida nombre y posición después de eliminar espacios exteriores del encabezado. Las dos ocurrencias fuente de `NRO_DOC_TIT` se conservan internamente como `NRO_DOC_TIT_1` y `NRO_DOC_TIT_2`; ambas participan en `row_hash`. Si coinciden se usa el valor, si solo una está informada se usa esa y si difieren o ambas están vacías la fila se registra como error. Los ceros iniciales nunca se eliminan. Caja Arequipa v1 no proporciona un identificador adicional de origen, por lo que `cartera_operaciones.identificador_origen` permanece `NULL`.
+
+`raw_cartera_caja_arequipa` conserva las 66 posiciones; la segunda ocurrencia se persiste físicamente como `NRO_DOC_TIT_2` porque MySQL no permite nombres repetidos. Los ocho campos fuente de texto libre largo (`DIR_LEGAL`, `REF_LEGAL`, `DIR_GES`, `REF_GES`, `ACTIVIDAD`, `DIR_NEG`, `DIR_AVAL` y `REF_AVAL`) usan `TEXT` para conservar contenido fuera de la fila InnoDB y evitar `ERROR 1118` en MySQL 5.7 con `utf8mb4`. El modelo común recibe documento, cuenta, operación, titular, moneda, saldos, deuda, interés, mora, fechas, atraso, producto, agencia y geografía global. Los campos exclusivos se tipan en `cartera_caja_arequipa_detalle`, incluida `provision` como `DECIMAL(15,4)` sin convertirla a porcentaje.
+
+Los teléfonos de titular y gestión se separan por `|` y se insertan en orden determinístico en `cartera_contactos`; el teléfono del aval permanece en `cartera_avales`. Las direcciones `LEGAL`, `GESTION` y `NEGOCIO` solo se crean si su propio bloque contiene información, sin copiar la geografía global de la operación. El único bloque fuente de aval produce como máximo una fila, aunque `NRO_AVALES` informe otra cantidad. Cada par `TIP_GARn` / `MTO_GARn` produce una garantía cuando al menos uno de los dos valores existe, preservando garantías parciales.
+
+Las fechas aceptan valores `date`/`datetime`, texto en formatos explícitos y seriales Excel convertidos con el epoch real del workbook. Los importes reutilizan el normalizador `Decimal(15,2)` y su tolerancia acotada para ruido binario de celdas XLSX. Una fila válida inserta Bronze, operación, detalle y todos sus hijos en la misma transacción corta del chunk; una falla revierte el chunk completo.

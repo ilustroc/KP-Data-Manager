@@ -57,7 +57,7 @@
                                     </option>
                                 @endforeach
                             </select>
-                            <span class="mt-1.5 block text-xs font-normal normal-case tracking-normal text-slate-500">Actualmente disponible: BBVA.</span>
+                            <span class="mt-1.5 block text-xs font-normal normal-case tracking-normal text-slate-500">Actualmente disponibles: BBVA y Caja Arequipa.</span>
                         </label>
 
                         <fieldset>

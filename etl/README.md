@@ -1,6 +1,6 @@
 # KP Data Manager ETL
 
-Motor CLI para procesar cargas `PENDIENTE`. Mantiene el loader de `PAGOS` y agrega routing por perfil para `CARTERA / BBVA / v1`. El CLI continúa siendo independiente y puede ser invocado por el Queue Job de Laravel sin compartir las credenciales MySQL de ambas aplicaciones.
+Motor CLI para procesar cargas `PENDIENTE`. Mantiene el loader de `PAGOS` y routing explícito para `CARTERA / BBVA / v1` y `CARTERA / CAJA_AREQUIPA / v1`. El CLI continúa siendo independiente y puede ser invocado por el Queue Job de Laravel sin compartir las credenciales MySQL de ambas aplicaciones.
 
 ## Runtime
 
@@ -54,8 +54,10 @@ El worker rechaza explícitamente `root`, `jesus_admin` y `kp_data_manager_app`.
 - `INSERT` sobre `kp_control.import_error`.
 - `INSERT` sobre `kp_bronze.raw_pagos`.
 - `INSERT`, `SELECT` sobre `kp_bronze.raw_cartera_bbva` para correlacionar `source_row` con `raw_id` dentro del chunk.
+- `INSERT`, `SELECT` sobre `kp_bronze.raw_cartera_caja_arequipa` para la misma correlación por chunk.
 - `INSERT`, `SELECT` sobre `kp_silver.cartera_operaciones`.
 - `INSERT` sobre `kp_silver.cartera_contactos` y `kp_silver.cartera_direcciones`.
+- `INSERT` sobre `kp_silver.cartera_caja_arequipa_detalle`, `kp_silver.cartera_avales` y `kp_silver.cartera_garantias`.
 
 No necesita `DELETE` ni `UPDATE` sobre Bronze.
 
@@ -72,6 +74,10 @@ Antes de una prueba manual deben haberse revisado y aplicado manualmente:
 7. `database/sql/010_create_cartera_operaciones.sql`.
 8. `database/sql/011_create_cartera_contactos.sql`.
 9. `database/sql/012_create_cartera_direcciones.sql`.
+10. `database/sql/013_create_raw_cartera_caja_arequipa.sql`.
+11. `database/sql/014_create_cartera_caja_arequipa_detalle.sql`.
+12. `database/sql/015_create_cartera_avales.sql`.
+13. `database/sql/016_create_cartera_garantias.sql`.
 
 `003` agrega una huella técnica con índice **no único**. El ETL calcula `row_hash`, pero no consulta esa columna ni descarta coincidencias. `007` alinea `raw_pagos.batch_id` con `import_batch.batch_id` como `BIGINT UNSIGNED NULL` e incorpora un índice no único, sin foreign key entre esquemas.
 
@@ -119,7 +125,7 @@ php artisan queue:work --queue=etl
 ## Flujo del batch
 
 1. Lee la carga y exige estado `PENDIENTE`.
-2. Resuelve el loader con un registry: `PAGOS` conserva su loader; `CARTERA / BBVA / 1` utiliza el perfil BBVA v1. Cualquier combinación no registrada se rechaza.
+2. Resuelve el loader con un registry: `PAGOS` conserva su loader; Carteras admite los perfiles registrados BBVA v1 y Caja Arequipa v1. Cualquier combinación no registrada se rechaza.
 3. Resuelve `archivo_ruta` dentro de `ETL_IMPORT_STORAGE_ROOT`, sin permitir rutas absolutas, `..` ni symlinks externos.
 4. Verifica existencia, extensión y SHA-256 contra los metadatos registrados.
 5. Reclama la carga atómicamente como `PROCESANDO` y reinicia sus contadores.
@@ -129,7 +135,7 @@ php artisan queue:work --queue=etl
 9. Actualiza contadores periódicamente.
 10. Finaliza como `COMPLETADO`, `COMPLETADO_CON_ERRORES` o `ERROR`, siempre con fechas UTC.
 
-### Carteras y BBVA v1
+### Carteras: BBVA v1 y Caja Arequipa v1
 
 El perfil se identifica por la terna `tipo=CARTERA`, `entidad=BBVA`, `perfil_version=1`. Los encabezados BBVA v1 son estrictos: un encabezado obligatorio ausente, duplicado o adicional indica un formato incompatible y detiene la carga antes de insertar filas. Los cambios de formato deben incorporarse como una nueva versión, nunca reinterpretando silenciosamente una carga histórica.
 
@@ -151,6 +157,8 @@ Mapeo de identidad BBVA confirmado:
 - `DOCUMENTO` → `identificador_origen`; nunca reemplaza los tres campos anteriores.
 
 `deuda_total` permanece `NULL`: no se deriva de capital, interés y mora sin una definición de negocio aprobada. Los cinco bloques de teléfonos se expanden a filas y la dirección BBVA se registra como `PRINCIPAL`. `row_hash` es una huella SHA-256 no única y no elimina registros.
+
+Caja Arequipa v1 exige 66 posiciones exactas, termina en `COSECHA` y conserva por separado las dos columnas fuente llamadas `NRO_DOC_TIT`. Su documento efectivo requiere coincidencia o usa la única ocurrencia informada. Como la fuente no incluye un identificador adicional, `cartera_operaciones.identificador_origen` queda `NULL`. Las fechas numéricas se convierten con el epoch del workbook, los teléfonos `TEL_TIT` y `TEL_GES` se expanden por `|`, y los datos específicos se distribuyen entre detalle, avales y hasta seis garantías. Todas las escrituras de una fila válida permanecen dentro de la transacción corta del chunk.
 
 Una caída no borra chunks ya confirmados. Las filas quedan trazables por `batch_id`; una futura operación controlada de rollback podría localizarlas con `WHERE batch_id = X`, pero esta fase no implementa borrados ni reprocesamiento.
 

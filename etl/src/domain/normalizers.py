@@ -16,6 +16,8 @@ TWO_DECIMALS = Decimal("0.01")
 # while remaining far below the smallest genuine third decimal (0.001).
 XLSX_FLOAT_MONEY_TOLERANCE = Decimal("0.000000001")
 MAX_DECIMAL_15_2 = Decimal("9999999999999.99")
+FOUR_DECIMALS = Decimal("0.0001")
+MAX_DECIMAL_15_4 = Decimal("99999999999.9999")
 
 
 class FieldNormalizationError(ValueError):
@@ -115,6 +117,26 @@ def normalize_money(
         raise FieldNormalizationError(f"{field_label} excede DECIMAL(15,2)")
     if quantized == 0 and not allow_zero:
         raise FieldNormalizationError(f"{field_label} cero no está permitido por configuración")
+    return quantized
+
+
+def normalize_decimal_15_4(cell: CellValue, *, field_label: str) -> Decimal:
+    text = cell_to_text(cell)
+    normalized = "" if text is None else text.replace(",", "")
+    if not MONEY_PATTERN.fullmatch(normalized):
+        raise FieldNormalizationError(f"{field_label} inválido")
+    try:
+        value = Decimal(normalized)
+        quantized = value.quantize(FOUR_DECIMALS)
+    except InvalidOperation as exception:
+        raise FieldNormalizationError(f"{field_label} inválido") from exception
+    difference = abs(value - quantized)
+    if value != quantized and not (
+        cell.is_xlsx_float and difference <= XLSX_FLOAT_MONEY_TOLERANCE
+    ):
+        raise FieldNormalizationError(f"{field_label} admite como máximo cuatro decimales")
+    if abs(quantized) > MAX_DECIMAL_15_4:
+        raise FieldNormalizationError(f"{field_label} excede DECIMAL(15,4)")
     return quantized
 
 
