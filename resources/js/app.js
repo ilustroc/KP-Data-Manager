@@ -67,3 +67,63 @@ const updateFinancialEntityVisibility = () => {
 
 importType?.addEventListener('change', updateFinancialEntityVisibility);
 updateFinancialEntityVisibility();
+
+const importDeletionDialog = document.querySelector('[data-import-deletion-dialog]');
+const importDeletionOpen = document.querySelector('[data-import-deletion-open]');
+const importDeletionConfirmation = document.querySelector('[data-import-deletion-confirmation]');
+const importDeletionSubmit = document.querySelector('[data-import-deletion-submit]');
+let importDeletionTrigger = null;
+
+const updateImportDeletionConfirmation = () => {
+    if (importDeletionConfirmation instanceof HTMLInputElement
+        && importDeletionSubmit instanceof HTMLButtonElement) {
+        importDeletionSubmit.disabled = importDeletionConfirmation.value !== 'ELIMINAR';
+    }
+};
+
+const closeImportDeletionDialog = () => {
+    if (importDeletionDialog instanceof HTMLDialogElement) {
+        importDeletionDialog.close();
+        document.body.classList.remove('overflow-hidden');
+
+        if (importDeletionTrigger instanceof HTMLElement) {
+            importDeletionTrigger.focus();
+        }
+    }
+};
+
+importDeletionOpen?.addEventListener('click', (event) => {
+    if (importDeletionDialog instanceof HTMLDialogElement) {
+        importDeletionTrigger = event.currentTarget;
+        importDeletionDialog.showModal();
+        document.body.classList.add('overflow-hidden');
+        if (importDeletionConfirmation instanceof HTMLInputElement) {
+            importDeletionConfirmation.focus();
+        }
+    }
+});
+
+document.querySelectorAll('[data-import-deletion-close]').forEach((button) => {
+    button.addEventListener('click', closeImportDeletionDialog);
+});
+
+importDeletionConfirmation?.addEventListener('input', () => {
+    updateImportDeletionConfirmation();
+});
+
+updateImportDeletionConfirmation();
+
+if (importDeletionDialog instanceof HTMLDialogElement) {
+    importDeletionDialog.addEventListener('cancel', () => {
+        document.body.classList.remove('overflow-hidden');
+    });
+
+    if (importDeletionDialog.hasAttribute('data-import-deletion-auto-open')) {
+        importDeletionDialog.showModal();
+        document.body.classList.add('overflow-hidden');
+
+        if (importDeletionConfirmation instanceof HTMLInputElement) {
+            importDeletionConfirmation.focus();
+        }
+    }
+}

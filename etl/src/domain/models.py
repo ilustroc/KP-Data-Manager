@@ -231,6 +231,42 @@ CAJA_AREQUIPA_BRONZE_COLUMNS = (
 )
 
 
+COMPARTAMOS_SOURCE_COLUMNS = (
+    "Ctacliente",
+    "Operación",
+    "Documento",
+    "NomCliente",
+    "oficina Agencia",
+    "Skapital",
+    "IntComp",
+    "IntMoratorio",
+    "Deuda total",
+    "Moneda",
+    "TipCambio",
+    "SKSoles",
+    "Lote",
+    "Empresa",
+    "FecCastigo",
+    "FecDesembolso",
+    "Dias_Atraso",
+    "LinNeg",
+    "NumDoc",
+    "NomDistrito",
+    "NomProvincia",
+    "NomDepartamento",
+    "FecNacimiento",
+    "Direccion Cliente",
+    "Direccion Negocio",
+    "Telefono1",
+    "Telefono2",
+    "Telefono3",
+    "Telefono4",
+    "Cosecha",
+)
+
+COMPARTAMOS_BRONZE_COLUMNS = COMPARTAMOS_SOURCE_COLUMNS
+
+
 @dataclass(frozen=True, slots=True)
 class CajaArequipaDetail:
     analista: str | None
@@ -297,7 +333,42 @@ class CajaArequipaPortfolioRecord:
         )
 
 
-PortfolioRecord = BbvaPortfolioRecord | CajaArequipaPortfolioRecord
+@dataclass(frozen=True, slots=True)
+class CompartamosDetail:
+    documento_fuente: str | None
+    tipo_cambio: Decimal | None
+    saldo_capital_soles: Decimal | None
+    lote: str | None
+    empresa: str | None
+    anio_desembolso: int | None
+    fecha_nacimiento: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class CompartamosPortfolioRecord:
+    source_values: tuple[str | None, ...]
+    source_row: int
+    source_file: str
+    batch_id: int
+    row_hash: str
+    ingested_at: datetime
+    operation: PortfolioOperation
+    detail: CompartamosDetail
+    contacts: tuple[PortfolioContact, ...]
+    addresses: tuple[PortfolioAddress, ...]
+
+    def raw_insert_tuple(self) -> tuple[Any, ...]:
+        return (
+            *self.source_values,
+            self.batch_id,
+            self.source_row,
+            self.source_file,
+            self.row_hash,
+            self.ingested_at,
+        )
+
+
+PortfolioRecord = BbvaPortfolioRecord | CajaArequipaPortfolioRecord | CompartamosPortfolioRecord
 
 
 @dataclass(slots=True)

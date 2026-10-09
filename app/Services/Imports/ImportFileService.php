@@ -2,9 +2,13 @@
 
 namespace App\Services\Imports;
 
+use DateTimeImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use finfo;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
+use InvalidArgumentException;
 use RuntimeException;
 use ZipArchive;
 
@@ -112,6 +116,23 @@ class ImportFileService
     public function exists(?string $path): bool
     {
         return filled($path) && $this->disk()->exists($path);
+    }
+
+    public function pathForBatch(int $batchId, string $internalName, DateTimeInterface $registeredAt): string
+    {
+        $normalizedName = trim($internalName);
+        $portableName = str_replace('\\', '/', $normalizedName);
+
+        if ($batchId < 1
+            || $normalizedName === ''
+            || str_contains($normalizedName, "\0")
+            || basename($portableName) !== $portableName) {
+            throw new InvalidArgumentException('Los metadatos del archivo interno no son válidos.');
+        }
+
+        $utcDate = DateTimeImmutable::createFromInterface($registeredAt)->setTimezone(new DateTimeZone('UTC'));
+
+        return $utcDate->format('Y/m').'/'.$batchId.'/'.$normalizedName;
     }
 
     public function disk(): Filesystem

@@ -11,9 +11,11 @@ from .config import Settings
 from .domain.models import (
     BBVA_SOURCE_COLUMNS,
     CAJA_AREQUIPA_BRONZE_COLUMNS,
+    COMPARTAMOS_BRONZE_COLUMNS,
     BatchRecord,
     BbvaPortfolioRecord,
     CajaArequipaPortfolioRecord,
+    CompartamosPortfolioRecord,
     PaymentRecord,
     PortfolioRecord,
     ProcessingStats,
@@ -166,6 +168,19 @@ class MySqlDatabase:
                             CAJA_AREQUIPA_BRONZE_COLUMNS,
                         )
                         self._insert_caja_arequipa_children(cursor, narrowed_records, correlations)
+                    elif record_type is CompartamosPortfolioRecord:
+                        narrowed_records = [
+                            record
+                            for record in records
+                            if isinstance(record, CompartamosPortfolioRecord)
+                        ]
+                        correlations = self._insert_portfolio_records(
+                            cursor,
+                            narrowed_records,
+                            "raw_cartera_compartamos",
+                            COMPARTAMOS_BRONZE_COLUMNS,
+                        )
+                        self._insert_compartamos_children(cursor, narrowed_records, correlations)
                     else:
                         raise RuntimeError("Tipo de registro de cartera no soportado.")
                 if errors:
@@ -326,6 +341,41 @@ class MySqlDatabase:
             cursor.executemany(guarantor_sql, guarantors)
         if guarantees:
             cursor.executemany(guarantee_sql, guarantees)
+
+    def _insert_compartamos_children(
+        self,
+        cursor: DictCursor,
+        records: Sequence[CompartamosPortfolioRecord],
+        correlations: dict[int, tuple[int, int]],
+    ) -> None:
+        detail_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_compartamos_detalle`
+                (`operacion_id`, `documento_cliente`, `documento_fuente`, `tipo_cambio`,
+                 `saldo_capital_soles`, `lote`, `empresa`, `anio_desembolso`,
+                 `fecha_nacimiento`, `batch_id`, `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 12)})
+        """
+        details = []
+        for record in records:
+            raw_id, operation_id = correlations[record.source_row]
+            detail = record.detail
+            details.append(
+                (
+                    operation_id,
+                    record.operation.documento_cliente,
+                    detail.documento_fuente,
+                    detail.tipo_cambio,
+                    detail.saldo_capital_soles,
+                    detail.lote,
+                    detail.empresa,
+                    detail.anio_desembolso,
+                    detail.fecha_nacimiento,
+                    record.batch_id,
+                    raw_id,
+                    record.ingested_at,
+                )
+            )
+        cursor.executemany(detail_sql, details)
 
     def _raw_ids_by_source_row(
         self,

@@ -45,7 +45,7 @@ def source_values(**overrides: object) -> dict[str, CellValue]:
             "distrito": "LIMA",
             "tipofono1": "MOVIL",
             "prefijo1": "51",
-            "fono1": "0987654321",
+            "fono1": "987654321",
             "extension1": "0000",
             "tipofono2": "FIJO",
             "prefijo2": "01",
@@ -144,9 +144,33 @@ def test_phones_are_expanded_to_rows_and_empty_phone_does_not_use_extension():
 
     assert errors == []
     assert record is not None
-    assert [contact.telefono for contact in record.contacts] == ["0987654321", "01234567"]
+    assert [contact.telefono for contact in record.contacts] == ["987654321"]
     assert record.contacts[0].extension == "0000"
-    assert record.contacts[1].orden == 2
+
+
+def test_phones_are_normalized_filtered_and_deduplicated_per_operation():
+    record, errors = normalize(
+        fono1="#952999016",
+        fono2="952 999 016",
+        fono3="999999999",
+        fono4="+51912631273",
+        fono5="934043966.",
+        tipofono4="MOVIL",
+        prefijo4="51",
+        extension4="123",
+    )
+
+    assert errors == []
+    assert record is not None
+    assert [contact.telefono for contact in record.contacts] == [
+        "952999016",
+        "912631273",
+        "934043966",
+    ]
+    assert record.contacts[1].orden == 4
+    assert record.contacts[1].tipo == "MOVIL"
+    assert record.contacts[1].prefijo == "51"
+    assert record.contacts[1].extension == "123"
 
 
 def test_address_is_normalized_as_principal_with_geography():

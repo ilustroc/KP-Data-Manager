@@ -42,6 +42,18 @@ def test_registry_routes_caja_arequipa_v1_portfolio(settings):
     assert loader.profile.version == "1"
 
 
+def test_registry_routes_compartamos_v1_portfolio(settings):
+    database = FakeCarteraDatabase(
+        make_batch(tipo="CARTERA", entidad="COMPARTAMOS", perfil_version="1")
+    )
+
+    loader = LoaderRegistry().resolve(database.batch, database, settings)
+
+    assert isinstance(loader, CarteraLoader)
+    assert loader.profile.entity == "COMPARTAMOS"
+    assert loader.profile.version == "1"
+
+
 def test_registry_rejects_portfolio_without_supported_profile(settings):
     database = FakeCarteraDatabase(
         make_batch(tipo="CARTERA", entidad="WANDOO", perfil_version="1")

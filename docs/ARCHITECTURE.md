@@ -654,7 +654,7 @@ Estas decisiones no deben inventarse durante el desarrollo:
 8. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
 9. Privilegios definitivos del usuario de aplicación si las vistas se convierten a `SQL SECURITY INVOKER`.
 
-## 18. Carteras — fundación multientidad, BBVA v1 y Caja Arequipa v1
+## 18. Carteras — fundación multientidad, BBVA v1, Caja Arequipa v1 y Compartamos v1
 
 La cartera no comparte una tabla Bronze universal. Cada entidad conserva su contrato físico y su evolución de versiones, mientras Silver expone un modelo común:
 
@@ -669,11 +669,12 @@ cartera_operaciones
    ├── cartera_contactos
    ├── cartera_direcciones
    ├── cartera_caja_arequipa_detalle (solo Caja Arequipa)
+   ├── cartera_compartamos_detalle (solo Compartamos)
    ├── cartera_avales (cuando la fuente los expone)
    └── cartera_garantias (cuando la fuente las expone)
 ```
 
-`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1` y `CARTERA / CAJA_AREQUIPA / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
+`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1`, `CARTERA / CAJA_AREQUIPA / 1` y `CARTERA / COMPARTAMOS / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
 
 ### 18.1 Contrato multientidad
 
@@ -685,7 +686,7 @@ cartera_operaciones
 | Confianza | `DNI` | `Cuenta Cliente` | `Operación` |
 | Wandoo | `DNI` | exactamente `"0" + DNI` | `Numero de Prestamo` |
 
-BBVA v1 y Caja Arequipa v1 están implementados. Las demás filas documentan contratos futuros y no habilitan loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
+BBVA v1, Caja Arequipa v1 y Compartamos v1 están implementados. Las demás filas documentan contratos futuros y no habilitan loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
 
 ### 18.2 Perfil BBVA v1
 
@@ -740,6 +741,14 @@ El perfil exige exactamente 66 columnas, terminadas en `COSECHA`, y valida nombr
 
 `raw_cartera_caja_arequipa` conserva las 66 posiciones; la segunda ocurrencia se persiste físicamente como `NRO_DOC_TIT_2` porque MySQL no permite nombres repetidos. Los ocho campos fuente de texto libre largo (`DIR_LEGAL`, `REF_LEGAL`, `DIR_GES`, `REF_GES`, `ACTIVIDAD`, `DIR_NEG`, `DIR_AVAL` y `REF_AVAL`) usan `TEXT` para conservar contenido fuera de la fila InnoDB y evitar `ERROR 1118` en MySQL 5.7 con `utf8mb4`. El modelo común recibe documento, cuenta, operación, titular, moneda, saldos, deuda, interés, mora, fechas, atraso, producto, agencia y geografía global. Los campos exclusivos se tipan en `cartera_caja_arequipa_detalle`, incluida `provision` como `DECIMAL(15,4)` sin convertirla a porcentaje.
 
-Los teléfonos de titular y gestión se separan por `|` y se insertan en orden determinístico en `cartera_contactos`; el teléfono del aval permanece en `cartera_avales`. Las direcciones `LEGAL`, `GESTION` y `NEGOCIO` solo se crean si su propio bloque contiene información, sin copiar la geografía global de la operación. El único bloque fuente de aval produce como máximo una fila, aunque `NRO_AVALES` informe otra cantidad. Cada par `TIP_GARn` / `MTO_GARn` produce una garantía cuando al menos uno de los dos valores existe, preservando garantías parciales.
+Los teléfonos de titular y gestión se extraen desde celdas que pueden contener varios valores, se validan como celulares peruanos canónicos `9XXXXXXXX` y se insertan en orden determinístico en `cartera_contactos`; el teléfono del aval permanece en `cartera_avales`. `COSECHA` elimina whitespace solo al producir Silver, mientras Bronze conserva el texto fuente. Las direcciones `LEGAL`, `GESTION` y `NEGOCIO` solo se crean si su propio bloque contiene información, sin copiar la geografía global de la operación. El único bloque fuente de aval produce como máximo una fila, aunque `NRO_AVALES` informe otra cantidad. Cada par `TIP_GARn` / `MTO_GARn` produce una garantía cuando al menos uno de los dos valores existe, preservando garantías parciales.
 
 Las fechas aceptan valores `date`/`datetime`, texto en formatos explícitos y seriales Excel convertidos con el epoch real del workbook. Los importes reutilizan el normalizador `Decimal(15,2)` y su tolerancia acotada para ruido binario de celdas XLSX. Una fila válida inserta Bronze, operación, detalle y todos sus hijos en la misma transacción corta del chunk; una falla revierte el chunk completo.
+
+### 18.4 Perfil Compartamos v1
+
+Compartamos exige exactamente 30 posiciones, con nombre y orden canónicos después de eliminar whitespace exterior, incluido NBSP. `NumDoc`, `Ctacliente` y `Operación` se conservan como texto y alimentan respectivamente `documento_cliente`, `cuenta` y `operacion`; `Documento` permanece como atributo auxiliar en `cartera_compartamos_detalle`. Como la fuente no aporta otro identificador confirmado, `identificador_origen` queda `NULL`.
+
+Los cinco importes se normalizan con `Decimal`; `TipCambio` usa `DECIMAL(18,6)` sin transformar cero en `NULL` ni ejecutar conversión de moneda. `FecCastigo` y `FecNacimiento` aceptan fechas explícitas, valores nativos y seriales Excel con el epoch del workbook. `FecDesembolso` admite un año aislado o una fecha completa: el año se valida en el rango `1900..2100` y se persiste siempre que esté disponible como `cartera_compartamos_detalle.anio_desembolso`; una fecha completa también se conserva en `cartera_operaciones.fecha_desembolso`, mientras un año aislado deja ese campo en `NULL`. Bronze conserva el valor fuente sin reinterpretar un año como serial Excel. Las direcciones generan bloques `CLIENTE` y `NEGOCIO` solo cuando contienen información.
+
+BBVA, Caja Arequipa y Compartamos comparten un normalizador telefónico que conserva exclusivamente celulares peruanos `9XXXXXXXX`. También acepta `51` seguido de un celular peruano y elimina ese prefijo; no admite otros códigos de país ni agrega uno. Los valores vacíos, los fijos, las longitudes distintas de nueve y los nueve dígitos repetitivos se descartan. Las coincidencias se deduplican únicamente dentro de la misma operación, después de normalizar y conservando la primera aparición. No existe deduplicación global.

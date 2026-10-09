@@ -41,7 +41,7 @@ def valid_row(number: int, contract: str) -> SourceRow:
             "FECHAVEN": "31/10/2026",
             "tipodoc": "DNI",
             "numdoc": "01116950",
-            "fono1": "0987654321",
+            "fono1": "987654321",
             "direccion": "Dirección de prueba",
             "COSECHA": "BBVA1",
         }
@@ -88,7 +88,7 @@ def test_bbva_loader_streams_chunks_and_keeps_bronze_silver_traceability(setting
     assert database.portfolio_records[0].source_row == 2
     assert database.portfolio_records[0].operation.documento_cliente == "01116950"
     assert database.portfolio_records[0].operation.cuenta == "14898140"
-    assert database.portfolio_records[0].contacts[0].telefono == "0987654321"
+    assert database.portfolio_records[0].contacts[0].telefono == "987654321"
     assert database.portfolio_records[0].address is not None
     assert database.finished_status == "COMPLETADO"
 

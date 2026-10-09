@@ -272,12 +272,19 @@ class ImportControllerTest extends ImportFeatureTestCase
         $this->actingAs($user)->get(route('imports.show', 999999))->assertNotFound();
     }
 
-    public function test_no_delete_endpoint_exists(): void
+    public function test_read_only_user_cannot_call_delete_endpoint(): void
     {
-        $user = User::factory()->admin()->create();
-        $batchId = $this->createBatch();
+        $user = User::factory()->readOnly()->create();
+        $batchId = $this->createBatch([
+            'tipo' => ImportType::Portfolio->value,
+            'entidad' => 'BBVA',
+            'origen' => ImportOrigin::Historical->value,
+            'estado' => ImportStatus::Completed->value,
+        ]);
 
-        $this->actingAs($user)->delete('/cargas/'.$batchId)->assertMethodNotAllowed();
+        $this->actingAs($user)
+            ->delete(route('imports.destroy', $batchId), ['confirmation' => 'ELIMINAR'])
+            ->assertForbidden();
     }
 
     public function test_registration_persists_utc_and_presents_lima_time(): void

@@ -30,6 +30,31 @@ abstract class ImportFeatureTestCase extends TestCase
             'imports.storage_disk' => 'imports',
             'imports.max_web_upload_mb' => 50,
             'imports.allowed_extensions' => ['csv', 'xlsx'],
+            'imports.deletion.audit_table' => 'import_deletion_log',
+            'imports.deletion.entity_tables' => [
+                'BBVA' => [
+                    'cartera_contactos',
+                    'cartera_direcciones',
+                    'cartera_operaciones',
+                    'raw_cartera_bbva',
+                ],
+                'CAJA_AREQUIPA' => [
+                    'cartera_caja_arequipa_detalle',
+                    'cartera_avales',
+                    'cartera_garantias',
+                    'cartera_contactos',
+                    'cartera_direcciones',
+                    'cartera_operaciones',
+                    'raw_cartera_caja_arequipa',
+                ],
+                'COMPARTAMOS' => [
+                    'cartera_compartamos_detalle',
+                    'cartera_contactos',
+                    'cartera_direcciones',
+                    'cartera_operaciones',
+                    'raw_cartera_compartamos',
+                ],
+            ],
         ]);
 
         $this->createImportSchema();
@@ -108,6 +133,21 @@ abstract class ImportFeatureTestCase extends TestCase
 
     private function createImportSchema(): void
     {
+        foreach ([
+            'import_deletion_log',
+            'raw_cartera_compartamos',
+            'raw_cartera_caja_arequipa',
+            'raw_cartera_bbva',
+            'cartera_compartamos_detalle',
+            'cartera_garantias',
+            'cartera_avales',
+            'cartera_caja_arequipa_detalle',
+            'cartera_direcciones',
+            'cartera_contactos',
+            'cartera_operaciones',
+        ] as $table) {
+            Schema::connection('sqlite')->dropIfExists($table);
+        }
         Schema::connection('sqlite')->dropIfExists('import_error');
         Schema::connection('sqlite')->dropIfExists('import_batch');
         Schema::connection('sqlite')->dropIfExists('raw_pagos_import_guard');
@@ -147,6 +187,44 @@ abstract class ImportFeatureTestCase extends TestCase
             $table->dateTime('created_at');
             $table->index(['batch_id', 'numero_fila']);
         });
+
+        Schema::connection('sqlite')->create('import_deletion_log', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('batch_id_original');
+            $table->string('tipo', 50);
+            $table->string('entidad', 50)->nullable();
+            $table->string('origen', 50)->nullable();
+            $table->string('archivo_original')->nullable();
+            $table->string('archivo_interno')->nullable();
+            $table->string('file_hash', 64)->nullable();
+            $table->unsignedBigInteger('filas_archivo')->default(0);
+            $table->unsignedBigInteger('filas_insertadas')->default(0);
+            $table->unsignedBigInteger('filas_error')->default(0);
+            $table->unsignedBigInteger('deleted_by_user_id');
+            $table->string('deleted_by_name', 255);
+            $table->dateTime('deleted_at');
+            $table->boolean('file_deleted')->default(false);
+            $table->string('warning', 500)->nullable();
+        });
+
+        foreach ([
+            'cartera_operaciones',
+            'cartera_contactos',
+            'cartera_direcciones',
+            'cartera_caja_arequipa_detalle',
+            'cartera_avales',
+            'cartera_garantias',
+            'cartera_compartamos_detalle',
+            'raw_cartera_bbva',
+            'raw_cartera_caja_arequipa',
+            'raw_cartera_compartamos',
+        ] as $tableName) {
+            Schema::connection('sqlite')->create($tableName, function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('batch_id')->index();
+                $table->string('payload')->nullable();
+            });
+        }
 
         Schema::connection('sqlite')->create('raw_pagos_import_guard', function (Blueprint $table): void {
             $table->id('raw_id');

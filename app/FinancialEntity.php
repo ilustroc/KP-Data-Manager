@@ -15,7 +15,7 @@ enum FinancialEntity: string
         return match ($this) {
             self::Bbva => 'BBVA',
             self::CajaArequipa => 'Caja Arequipa',
-            self::Compartamos => 'Compartamos Financiera',
+            self::Compartamos => 'Compartamos',
             self::Confianza => 'Financiera Confianza',
             self::Wandoo => 'Wandoo',
         };
@@ -23,13 +23,13 @@ enum FinancialEntity: string
 
     public function isImplemented(): bool
     {
-        return in_array($this, [self::Bbva, self::CajaArequipa], true);
+        return in_array($this, [self::Bbva, self::CajaArequipa, self::Compartamos], true);
     }
 
     public function profileVersion(): string
     {
         return match ($this) {
-            self::Bbva, self::CajaArequipa => '1',
+            self::Bbva, self::CajaArequipa, self::Compartamos => '1',
             default => throw new \LogicException("La entidad {$this->value} aún no tiene un perfil implementado."),
         };
     }
