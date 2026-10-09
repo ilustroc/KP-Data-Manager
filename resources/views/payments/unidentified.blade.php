@@ -4,11 +4,8 @@
 @section('page-heading', 'Pagos sin identificar')
 
 @section('content')
-    <div class="mx-auto max-w-[100rem]">
-        <div class="mb-6">
-            <h2 class="text-2xl font-semibold tracking-tight text-slate-950">Pagos sin identificar</h2>
-            <p class="mt-1 text-sm text-slate-600">Pagos cuyo documento efectivo está vacío o aún no ha sido asignado.</p>
-        </div>
+    <div class="kp-page-shell">
+        <x-page-header title="Pagos sin identificar" subtitle="Pagos cuyo documento efectivo está vacío o aún no ha sido asignado." />
 
         @include('payments.partials.filters', [
             'action' => route('payments.unidentified'),
@@ -17,7 +14,7 @@
             'showStatus' => false,
         ])
 
-        <div class="mt-6">
+        <div class="mt-3">
             @include('payments.partials.table', [
                 'payments' => $payments,
                 'variant' => 'unidentified',

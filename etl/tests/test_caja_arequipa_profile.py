@@ -58,7 +58,7 @@ def source_values(**overrides: object) -> dict[str, CellValue]:
             "TIP_DOC_TIT": "DNI",
             "TIP_DOC_AVAL": "DNI",
             "NRO_DOC_AVAL": "00005678",
-            "TEL_AVAL": "900 111 222|900333444",
+            "TEL_AVAL": "900111222|900333444",
             "COD_SBS": "SBS-01",
             "FEC_DES": "2015-12-10",
             "MTO_DES": "2,000.00",
@@ -212,7 +212,7 @@ def test_numeric_xlsx_account_and_operation_become_safe_text():
 
 
 def test_phones_expand_in_deterministic_order_and_remove_internal_whitespace():
-    record, errors = normalize(TEL_TIT="961593795|945944334", TEL_GES="937 519531")
+    record, errors = normalize(TEL_TIT="961593795|945944334", TEL_GES="937 519 531")
 
     assert errors == []
     assert record is not None
@@ -223,6 +223,73 @@ def test_phones_expand_in_deterministic_order_and_remove_internal_whitespace():
     ]
     assert record.guarantor is not None
     assert record.guarantor.telefono == "900111222|900333444"
+
+
+def test_phones_are_normalized_filtered_and_deduplicated_across_holder_sources():
+    record, errors = normalize(
+        TEL_TIT="#952999016|999999999|952 999 016",
+        TEL_GES='"934043966"|+51912631273|952999016.',
+        TEL_AVAL="999999999| (+51) 934-043-966 |934043966",
+    )
+
+    assert errors == []
+    assert record is not None
+    assert [(item.tipo, item.telefono) for item in record.contacts] == [
+        ("TITULAR", "952999016"),
+        ("GESTION", "934043966"),
+        ("GESTION", "912631273"),
+    ]
+    assert record.guarantor is not None
+    assert record.guarantor.telefono == "934043966"
+
+
+def test_multi_phone_cells_preserve_source_type_order_and_bronze_value():
+    holder_source = "987033819-950066424|950712224"
+    management_source = "950712224|953782316 -951159659"
+    guarantor_source = "950948070|#988181819-956006921"
+
+    record, errors = normalize(
+        TEL_TIT=holder_source,
+        TEL_GES=management_source,
+        TEL_AVAL=guarantor_source,
+    )
+
+    assert errors == []
+    assert record is not None
+    assert [(item.orden, item.tipo, item.telefono) for item in record.contacts] == [
+        (1, "TITULAR", "987033819"),
+        (2, "TITULAR", "950066424"),
+        (3, "TITULAR", "950712224"),
+        (4, "GESTION", "953782316"),
+        (5, "GESTION", "951159659"),
+    ]
+    assert record.guarantor is not None
+    assert record.guarantor.telefono == "950948070|988181819|956006921"
+    assert record.source_values[CAJA_AREQUIPA_SOURCE_COLUMNS.index("TEL_TIT")] == holder_source
+    assert record.source_values[CAJA_AREQUIPA_SOURCE_COLUMNS.index("TEL_GES")] == management_source
+    assert record.source_values[CAJA_AREQUIPA_SOURCE_COLUMNS.index("TEL_AVAL")] == guarantor_source
+
+
+def test_same_phone_is_preserved_in_different_operations():
+    first, first_errors = normalize(OPERACION="OP-1", TEL_TIT="987033819", TEL_GES=None)
+    second, second_errors = normalize(OPERACION="OP-2", TEL_TIT="987033819", TEL_GES=None)
+
+    assert first_errors == []
+    assert second_errors == []
+    assert first is not None and second is not None
+    assert first.operation.operacion == "OP-1"
+    assert second.operation.operacion == "OP-2"
+    assert [contact.telefono for contact in first.contacts] == ["987033819"]
+    assert [contact.telefono for contact in second.contacts] == ["987033819"]
+
+
+def test_harvest_removes_whitespace_only_in_silver_and_preserves_bronze_value():
+    record, errors = normalize(COSECHA=" CAJA AQP2 ")
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.cosecha == "CAJAAQP2"
+    assert record.source_values[CAJA_AREQUIPA_SOURCE_COLUMNS.index("COSECHA")] == "CAJA AQP2"
 
 
 def test_only_nonempty_holder_addresses_are_created_without_inferred_geography():

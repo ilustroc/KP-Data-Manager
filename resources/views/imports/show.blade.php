@@ -9,60 +9,77 @@
 @endphp
 
 @section('content')
-    <div class="mx-auto max-w-6xl" @if ($refreshesAutomatically) data-auto-refresh-url="{{ route('imports.show', $batch->batch_id) }}" data-auto-refresh-after="8000" @endif>
-        <a href="{{ route('imports.index') }}" class="mb-5 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-kp-700">
+    <div class="kp-page-shell" @if ($refreshesAutomatically) data-auto-refresh-url="{{ route('imports.show', $batch->batch_id) }}" data-auto-refresh-after="8000" @endif>
+        <a href="{{ route('imports.index') }}" class="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-primary">
             <span aria-hidden="true">←</span>
-            Volver a cargas
+            Cargas
         </a>
 
-        <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div class="mb-3 flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <p class="kp-eyebrow">Registro de procesamiento</p>
-                <div class="mt-2 flex flex-wrap items-center gap-3">
-                    <h2 class="text-2xl font-semibold tracking-[-0.02em] text-slate-950 sm:text-3xl">Carga #{{ $batch->batch_id }}</h2>
+                <div class="flex flex-wrap items-center gap-2">
+                    <h2 class="kp-page-title">Carga #{{ $batch->batch_id }} · <span class="font-medium">{{ $batch->archivo_original ?? $batch->archivo }}</span></h2>
                     <x-import-status-badge :status="$batch->estado" />
                 </div>
-                <p class="mt-2 break-all text-sm text-slate-600">{{ $batch->archivo_original ?? $batch->archivo }}</p>
+                <p class="kp-page-subtitle">
+                    @if (filled($batch->entidad))
+                        {{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }} ·
+                    @endif
+                    {{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }} · <x-utc-datetime :value="$batch->fecha_inicio" />
+                </p>
+            </div>
+            <div class="flex shrink-0 flex-wrap gap-2">
+                @can('operate')
+                    @if ($fileIsStored)
+                        <a href="{{ route('imports.file', $batch->batch_id) }}" class="kp-btn-secondary">
+                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg>
+                            Descargar
+                        </a>
+                    @endif
+                @endcan
+                @can('administer')
+                    @if ($deletionAllowed)
+                        <button type="button" class="kp-btn-danger" data-import-deletion-open>Eliminar carga</button>
+                    @endif
+                @endcan
             </div>
         </div>
 
         @if ($importStatus === \App\ImportStatus::Pending)
-            <section class="kp-panel mb-5 flex flex-col gap-4 border-l-4 border-l-amber-500 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <section class="kp-panel mb-3 flex flex-col gap-3 border-l-[3px] border-l-amber-500 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex items-start gap-3">
-                    <div class="grid size-10 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700">
+                    <div class="grid size-8 shrink-0 place-items-center rounded-control bg-amber-100 text-amber-700">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke-width="1.8"/><path stroke-linecap="round" stroke-width="1.8" d="M12 7v5l3 2"/></svg>
                     </div>
                     <div>
                         <h3 class="font-semibold text-slate-950">Preparando procesamiento...</h3>
-                        <p class="mt-1 text-sm text-slate-600">Carga registrada y enviada a procesamiento.</p>
-                        <p class="mt-2 text-xs text-slate-500">El estado se actualiza automáticamente.</p>
+                        <p class="text-[13px] text-muted">Carga registrada y enviada a procesamiento. El estado se actualiza automáticamente.</p>
                     </div>
                 </div>
                 <a href="{{ route('imports.show', $batch->batch_id) }}" class="kp-btn-secondary whitespace-nowrap">Actualizar estado</a>
             </section>
         @elseif ($importStatus === \App\ImportStatus::Processing)
-            <section class="kp-panel mb-5 flex flex-col gap-4 border-l-4 border-l-kp-500 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <section class="kp-panel mb-3 flex flex-col gap-3 border-l-[3px] border-l-primary p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex items-start gap-3">
-                    <div class="grid size-10 shrink-0 place-items-center rounded-full bg-kp-100 text-kp-700">
+                    <div class="grid size-8 shrink-0 place-items-center rounded-control bg-blue-100 text-primary">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 12a8 8 0 1 1-2.34-5.66M20 4v6h-6"/></svg>
                     </div>
                     <div>
                         <h3 class="font-semibold text-slate-950">Procesando carga</h3>
-                        <p class="mt-1 text-sm text-slate-600">La información está siendo validada y cargada.</p>
-                        <p class="mt-2 text-xs text-slate-500">El estado se actualiza automáticamente.</p>
+                        <p class="text-[13px] text-muted">La información está siendo validada y cargada. El estado se actualiza automáticamente.</p>
                     </div>
                 </div>
                 <a href="{{ route('imports.show', $batch->batch_id) }}" class="kp-btn-secondary whitespace-nowrap">Actualizar estado</a>
             </section>
         @elseif ($importStatus === \App\ImportStatus::Completed)
-            <section class="kp-panel mb-5 flex flex-col gap-4 border-l-4 border-l-emerald-500 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <section class="kp-panel mb-3 flex flex-col gap-3 border-l-[3px] border-l-emerald-500 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex items-start gap-3">
-                    <div class="grid size-10 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700">
+                    <div class="grid size-8 shrink-0 place-items-center rounded-control bg-emerald-100 text-emerald-700">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m5 12 4 4L19 6"/></svg>
                     </div>
                     <div>
                         <h3 class="font-semibold text-slate-950">Procesamiento completado correctamente.</h3>
-                        <p class="mt-1 text-sm text-slate-600">La información disponible fue validada y cargada.</p>
+                        <p class="text-[13px] text-muted">La información disponible fue validada y cargada.</p>
                     </div>
                 </div>
                 @if ($batch->tipo === \App\ImportType::Payments->value)
@@ -72,22 +89,22 @@
                 @endif
             </section>
         @elseif ($importStatus === \App\ImportStatus::CompletedWithErrors)
-            <section class="kp-panel mb-5 flex flex-col gap-4 border-l-4 border-l-orange-500 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <section class="kp-panel mb-3 flex flex-col gap-3 border-l-[3px] border-l-orange-500 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex items-start gap-3">
-                    <div class="grid size-10 shrink-0 place-items-center rounded-full bg-orange-100 text-orange-700">
+                    <div class="grid size-8 shrink-0 place-items-center rounded-control bg-orange-100 text-orange-700">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v5m0 3h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/></svg>
                     </div>
                     <div>
                         <h3 class="font-semibold text-slate-950">Procesamiento completado con observaciones.</h3>
-                        <p class="mt-1 text-sm text-slate-600">Algunas filas requieren revisión. Consulta el detalle para corregir el archivo de origen.</p>
+                        <p class="text-[13px] text-muted">Algunas filas requieren revisión. Consulta el detalle para corregir el archivo de origen.</p>
                     </div>
                 </div>
                 <a href="#errores" class="kp-btn-secondary whitespace-nowrap">Revisar observaciones</a>
             </section>
         @elseif ($importStatus === \App\ImportStatus::Error)
-            <section class="kp-panel mb-5 border-l-4 border-l-red-500 p-5">
+            <section class="kp-panel mb-3 border-l-[3px] border-l-red-500 p-3">
                 <div class="flex items-start gap-3">
-                    <div class="grid size-10 shrink-0 place-items-center rounded-full bg-red-100 text-red-700">
+                    <div class="grid size-8 shrink-0 place-items-center rounded-control bg-red-100 text-red-700">
                         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke-width="1.8"/><path stroke-linecap="round" stroke-width="1.8" d="m9 9 6 6m0-6-6 6"/></svg>
                     </div>
                     <div>
@@ -101,35 +118,35 @@
             </section>
         @endif
 
-        <section class="kp-panel overflow-hidden">
-            <dl class="grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
+        <section class="kp-kpi-strip sm:grid-cols-3 xl:grid-cols-3">
+            <dl class="contents">
                 @foreach ([
                     ['label' => 'Filas del archivo', 'value' => $batch->filas_archivo, 'color' => 'text-slate-950'],
                     ['label' => 'Cargadas', 'value' => $batch->filas_insertadas, 'color' => 'text-emerald-700'],
                     ['label' => 'Con error', 'value' => $batch->filas_error, 'color' => (int) $batch->filas_error > 0 ? 'text-red-700' : 'text-slate-950'],
                 ] as $counter)
-                    <div class="border-b border-slate-200 px-5 py-5 last:border-b-0 sm:border-b-0 sm:px-6">
-                        <dt class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{{ $counter['label'] }}</dt>
-                        <dd class="mt-2 text-3xl font-semibold tabular-nums tracking-[-0.03em] {{ $counter['color'] }}">{{ number_format((int) $counter['value']) }}</dd>
+                    <div class="kp-kpi-item">
+                        <dt class="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">{{ $counter['label'] }}</dt>
+                        <dd class="mt-1 text-2xl font-semibold tabular-nums tracking-[-0.025em] {{ $counter['color'] }}">{{ number_format((int) $counter['value']) }}</dd>
                     </div>
                 @endforeach
             </dl>
         </section>
 
-        <section class="kp-panel mt-5 overflow-hidden">
-            <div class="border-b border-slate-200 px-5 py-4 sm:px-6">
-                <h3 class="text-sm font-semibold text-slate-950">Información de la carga</h3>
+        <section class="kp-panel mt-3 overflow-hidden">
+            <div class="kp-section-header">
+                <h3 class="text-[13px] font-semibold text-ink">Información de la carga</h3>
             </div>
-            <div class="grid lg:grid-cols-[1.15fr_1fr] lg:divide-x lg:divide-slate-200">
-                <div class="p-5 sm:p-6">
-                    <p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Archivo</p>
-                    <div class="mt-3 flex items-start gap-3">
-                        <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-kp-50 text-kp-700">
+            <div class="grid lg:grid-cols-[1fr_1.4fr] lg:divide-x lg:divide-border">
+                <div class="p-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Archivo</p>
+                    <div class="mt-2 flex items-start gap-2.5">
+                        <div class="grid size-8 shrink-0 place-items-center rounded-control bg-blue-100 text-primary">
                             <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l4 4v14H7V3Zm7 0v5h5"/></svg>
                         </div>
                         <div class="min-w-0 flex-1">
-                            <p class="break-all text-sm font-semibold text-slate-900">{{ $batch->archivo_original ?? $batch->archivo }}</p>
-                            <p class="mt-1 text-xs text-slate-500">
+                            <p class="break-all text-[13px] font-semibold text-ink">{{ $batch->archivo_original ?? $batch->archivo }}</p>
+                            <p class="text-[11px] text-muted">
                                 <x-file-size :bytes="$batch->archivo_tamano" /> · {{ \App\ImportType::tryFrom($batch->tipo)?->label() ?? $batch->tipo }}
                                 @if (filled($batch->entidad))
                                     / {{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }}
@@ -137,42 +154,72 @@
                             </p>
                         </div>
                     </div>
-                    @can('operate')
-                        @if ($fileIsStored)
-                            <a href="{{ route('imports.file', $batch->batch_id) }}" class="kp-btn-secondary mt-5">
-                                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg>
-                                Descargar archivo
-                            </a>
-                        @endif
-                    @endcan
                 </div>
 
-                <div class="border-t border-slate-200 p-5 sm:p-6 lg:border-t-0">
-                    <dl class="grid grid-cols-[minmax(7rem,0.45fr)_1fr] gap-x-4 gap-y-3.5 text-sm">
-                        <dt class="text-slate-500">Origen</dt><dd class="font-medium text-slate-800">{{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }}</dd>
+                <div class="border-t border-border p-3 lg:border-t-0">
+                    <dl class="grid gap-x-3 gap-y-2 text-[13px] sm:grid-cols-[6rem_1fr_6rem_1fr]">
+                        <dt class="text-muted">Origen</dt><dd class="font-medium text-ink">{{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }}</dd>
                         @if (filled($batch->entidad))
-                            <dt class="text-slate-500">Entidad</dt><dd class="font-medium text-slate-800">{{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }}</dd>
+                            <dt class="text-muted">Entidad</dt><dd class="font-medium text-ink">{{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }}</dd>
                         @endif
-                        <dt class="text-slate-500">Registrada</dt><dd class="text-slate-800"><x-utc-datetime :value="$batch->fecha_inicio" /></dd>
-                        <dt class="text-slate-500">Finalizada</dt><dd class="text-slate-800"><x-utc-datetime :value="$batch->fecha_fin" /></dd>
-                        <dt class="text-slate-500">Registrada por</dt><dd class="text-slate-800">{{ $batch->usuario_nombre }}</dd>
+                        <dt class="text-muted">Registrada</dt><dd class="text-ink"><x-utc-datetime :value="$batch->fecha_inicio" /></dd>
+                        <dt class="text-muted">Finalizada</dt><dd class="text-ink"><x-utc-datetime :value="$batch->fecha_fin" /></dd>
+                        <dt class="text-muted">Usuario</dt><dd class="text-ink sm:col-span-3">{{ $batch->usuario_nombre }}</dd>
                     </dl>
                 </div>
             </div>
         </section>
 
-        @if ((int) $batch->filas_error > 0 || $errors->count() > 0)
-            <section id="errores" class="kp-panel mt-5 scroll-mt-24 overflow-hidden">
-                <div class="border-b border-slate-200 px-5 py-4 sm:flex sm:items-center sm:justify-between sm:px-6">
+        @can('administer')
+            @if ($deletionAllowed)
+                <dialog class="kp-modal" data-import-deletion-dialog @if ($errors->has('confirmation')) data-import-deletion-auto-open @endif role="dialog" aria-modal="true" aria-labelledby="delete-import-title" aria-describedby="delete-import-description">
+                    <form method="POST" action="{{ route('imports.destroy', $batch->batch_id) }}" data-import-deletion-form>
+                        @csrf
+                        @method('DELETE')
+                        <div class="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
+                            <div>
+                                <p class="text-[10px] font-semibold uppercase tracking-[0.08em] text-red-700">Acción irreversible</p>
+                                <h2 id="delete-import-title" class="mt-0.5 text-lg font-semibold text-ink">Eliminar carga #{{ $batch->batch_id }}</h2>
+                            </div>
+                            <button type="button" class="grid size-7 place-items-center rounded-control text-slate-500 hover:bg-slate-100 hover:text-ink" aria-label="Cerrar confirmación" data-import-deletion-close>✕</button>
+                        </div>
+
+                        <div class="p-4">
+                            <div id="delete-import-description" class="rounded-control border border-red-200 bg-red-50 p-3 text-[13px] text-red-900">
+                                <p>Se eliminarán los datos cargados, sus observaciones y el archivo XLSX/CSV privado.</p>
+                                <p class="mt-1 font-semibold">Esta acción no se puede deshacer desde la aplicación.</p>
+                            </div>
+
+                            <label for="deletion-confirmation" class="mt-4 block text-[13px] font-semibold text-ink">Escribe <span class="font-bold text-red-700">ELIMINAR</span> para confirmar</label>
+                            <input id="deletion-confirmation" name="confirmation" type="text" value="{{ old('confirmation') }}" autocomplete="off" spellcheck="false" class="kp-input" data-import-deletion-confirmation>
+                            @error('confirmation')
+                                <p class="mt-1 text-xs font-medium text-red-700">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div class="flex flex-col-reverse gap-2 border-t border-border bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end">
+                            <button type="button" class="kp-btn-secondary" data-import-deletion-close>Cancelar</button>
+                            <button type="submit" class="kp-btn-danger" disabled data-import-deletion-submit>
+                                Eliminar definitivamente
+                            </button>
+                        </div>
+                    </form>
+                </dialog>
+            @endif
+        @endcan
+
+        @if ((int) $batch->filas_error > 0 || $importErrors->count() > 0)
+            <section id="errores" class="kp-panel mt-3 scroll-mt-16 overflow-hidden">
+                <div class="kp-section-header">
                     <div>
-                        <h3 class="text-sm font-semibold text-slate-950">Observaciones del archivo</h3>
-                        <p class="mt-1 text-xs text-slate-500">Revisa la fila, el campo y el motivo para corregir el archivo de origen.</p>
+                        <h3 class="text-[13px] font-semibold text-ink">Observaciones del archivo</h3>
+                        <p class="text-[11px] text-muted">Revisa la fila, el campo y el motivo para corregir el archivo de origen.</p>
                     </div>
                     <span class="mt-2 inline-flex text-xs font-semibold text-red-700 sm:mt-0">{{ number_format((int) $batch->filas_error) }} filas con error</span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
-                        <thead class="bg-red-50/50">
+                    <table class="min-w-full divide-y divide-border text-left">
+                        <thead class="bg-slate-100/80">
                             <tr>
                                 <th class="kp-table-heading">Fila</th>
                                 <th class="kp-table-heading">Campo</th>
@@ -181,14 +228,14 @@
                                 <th class="kp-table-heading">Fecha</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            @forelse ($errors as $error)
-                                <tr class="hover:bg-red-50/30">
-                                    <td class="px-4 py-3.5 font-semibold tabular-nums text-slate-700">{{ $error->numero_fila }}</td>
-                                    <td class="px-4 py-3.5"><span class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ $error->campo ?: '—' }}</span></td>
-                                    <td class="max-w-xs truncate px-4 py-3.5 font-mono text-xs text-slate-600" title="{{ $error->valor }}">{{ $error->valor ?: '—' }}</td>
-                                    <td class="min-w-64 px-4 py-3.5 text-red-800">{{ $error->error }}</td>
-                                    <td class="whitespace-nowrap px-4 py-3.5 text-xs text-slate-500"><x-utc-datetime :value="$error->created_at" /></td>
+                        <tbody class="divide-y divide-border">
+                            @forelse ($importErrors as $error)
+                                <tr class="hover:bg-red-50/25">
+                                    <td class="kp-table-cell font-semibold tabular-nums text-slate-700">{{ $error->numero_fila }}</td>
+                                    <td class="kp-table-cell"><span class="rounded-control bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">{{ $error->campo ?: '—' }}</span></td>
+                                    <td class="kp-table-cell max-w-xs truncate font-mono text-xs text-slate-600" title="{{ $error->valor }}">{{ $error->valor ?: '—' }}</td>
+                                    <td class="kp-table-cell min-w-64 text-red-800">{{ $error->error }}</td>
+                                    <td class="kp-table-cell whitespace-nowrap text-xs text-muted"><x-utc-datetime :value="$error->created_at" /></td>
                                 </tr>
                             @empty
                                 <tr><td colspan="5" class="px-6 py-10 text-center text-sm text-slate-500">El detalle de las observaciones aún no está disponible.</td></tr>
@@ -196,8 +243,8 @@
                         </tbody>
                     </table>
                 </div>
-                @if ($errors->hasPages())
-                    <div class="border-t border-slate-200 px-4 py-3">{{ $errors->links() }}</div>
+                @if ($importErrors->hasPages())
+                    <div class="border-t border-slate-200 px-4 py-3">{{ $importErrors->links() }}</div>
                 @endif
             </section>
         @endif

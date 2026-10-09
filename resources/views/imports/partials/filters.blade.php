@@ -1,5 +1,5 @@
 @if ($errors->any())
-    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
+    <div class="mb-3 rounded-control border border-red-300 bg-red-50 px-3 py-2 text-[13px] text-red-900" role="alert">
         <p class="font-semibold">Revisa los filtros ingresados.</p>
         <ul class="mt-2 list-disc space-y-1 pl-5">
             @foreach ($errors->all() as $error)
@@ -19,16 +19,16 @@
 @endphp
 
 <form method="GET" action="{{ route('imports.index') }}" class="kp-panel overflow-hidden">
-    <div class="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 sm:px-5">
+    <div class="kp-section-header">
         <div class="flex items-center gap-2.5">
-            <svg class="size-4 text-kp-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 5h18M6 12h12m-8 7h4"/></svg>
+            <svg class="size-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 5h18M6 12h12m-8 7h4"/></svg>
             <h3 class="text-sm font-semibold text-slate-900">Filtros de búsqueda</h3>
         </div>
-        <a href="{{ route('imports.index') }}" class="text-xs font-semibold text-slate-500 hover:text-kp-700">Limpiar</a>
+        <a href="{{ route('imports.index') }}" class="text-xs font-semibold text-muted hover:text-primary">Limpiar</a>
     </div>
 
-    <div class="p-4 sm:p-5">
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div class="p-3">
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label class="kp-label">
                 N.º de carga
                 <input type="number" name="batch_id" min="1" value="{{ old('batch_id', $filters['batch_id'] ?? '') }}" placeholder="Ej. 125" class="kp-field normal-case tracking-normal">
@@ -60,13 +60,13 @@
             </label>
         </div>
 
-        <details class="mt-4 border-t border-slate-200 pt-4" @if ($hasAdvancedFilters) open @endif>
-            <summary class="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-slate-600 hover:text-kp-700">
+        <details class="mt-3 border-t border-border pt-2.5" @if ($hasAdvancedFilters) open @endif>
+            <summary class="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-muted hover:text-primary">
                 <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m9 18 6-6-6-6"/></svg>
                 Más filtros
             </summary>
 
-            <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+            <div class="mt-3 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
                 <label class="kp-label">
                     Tipo
                     <select name="tipo" class="kp-field normal-case tracking-normal">
@@ -113,7 +113,7 @@
             </div>
         </details>
 
-        <div class="mt-5 flex justify-end">
+        <div class="mt-3 flex justify-end">
             <button type="submit" class="kp-btn-primary">
                 <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke-width="1.8"/><path stroke-linecap="round" stroke-width="1.8" d="m20 20-4-4"/></svg>
                 Buscar cargas

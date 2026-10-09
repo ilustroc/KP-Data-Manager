@@ -9,6 +9,7 @@ use App\ImportOrigin;
 use App\ImportStatus;
 use App\ImportType;
 use App\Services\Imports\DuplicateImportFile;
+use App\Services\Imports\HistoricalPortfolioImportDeletionService;
 use App\Services\Imports\ImportBatchDispatcher;
 use App\Services\Imports\ImportBatchProcessingService;
 use App\Services\Imports\ImportBatchQueryService;
@@ -94,6 +95,7 @@ class ImportController extends Controller
         int $batchId,
         ImportBatchQueryService $batches,
         ImportFileService $files,
+        HistoricalPortfolioImportDeletionService $deletion,
     ): View {
         $batch = $batches->find($batchId);
 
@@ -101,8 +103,9 @@ class ImportController extends Controller
 
         return view('imports.show', [
             'batch' => $batch,
-            'errors' => $batches->paginateErrors($batchId),
+            'importErrors' => $batches->paginateErrors($batchId),
             'fileIsStored' => $files->exists($batch->archivo_ruta),
+            'deletionAllowed' => $deletion->isEligible($batch),
         ]);
     }
 }

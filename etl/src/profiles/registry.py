@@ -3,11 +3,16 @@ from __future__ import annotations
 from .carteras.base import BaseCarteraProfile
 from .carteras.bbva import BbvaV1Profile
 from .carteras.caja_arequipa import CajaArequipaV1Profile
+from .carteras.compartamos import CompartamosV1Profile
 
 
 class ProfileRegistry:
     def __init__(self, profiles: tuple[BaseCarteraProfile, ...] | None = None) -> None:
-        configured = profiles or (BbvaV1Profile(), CajaArequipaV1Profile())
+        configured = profiles or (
+            BbvaV1Profile(),
+            CajaArequipaV1Profile(),
+            CompartamosV1Profile(),
+        )
         self._profiles = {
             (profile.entity, profile.version): profile for profile in configured
         }

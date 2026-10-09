@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Storage;
 
 class PortfolioImportControllerTest extends ImportFeatureTestCase
 {
-    public function test_create_form_enables_bbva_and_caja_arequipa_only(): void
+    public function test_create_form_enables_bbva_caja_arequipa_and_compartamos_only(): void
     {
         $user = User::factory()->operator()->create();
 
@@ -24,6 +24,8 @@ class PortfolioImportControllerTest extends ImportFeatureTestCase
             ->assertSeeText('BBVA')
             ->assertSeeText('Caja Arequipa')
             ->assertDontSeeText('Caja Arequipa · Próximamente')
+            ->assertSeeText('Compartamos')
+            ->assertDontSeeText('Compartamos · Próximamente')
             ->assertSeeText('Wandoo · Próximamente');
     }
 
@@ -130,6 +132,31 @@ class PortfolioImportControllerTest extends ImportFeatureTestCase
         );
     }
 
+    public function test_valid_compartamos_portfolio_is_registered_with_profile_and_dispatched(): void
+    {
+        Queue::fake([ProcessImportBatch::class]);
+        Storage::fake('imports');
+        $user = User::factory()->operator()->create();
+
+        $response = $this->actingAs($user)->post(route('imports.store'), [
+            'tipo' => ImportType::Portfolio->value,
+            'entidad' => FinancialEntity::Compartamos->value,
+            'origen' => ImportOrigin::Historical->value,
+            'archivo' => $this->validCsv('COMPARTAMOS_OCTUBRE.csv'),
+        ]);
+
+        $batch = DB::connection('sqlite')->table('import_batch')->firstOrFail();
+        $response->assertRedirectToRoute('imports.show', $batch->batch_id);
+        $this->assertSame(ImportType::Portfolio->value, $batch->tipo);
+        $this->assertSame(FinancialEntity::Compartamos->value, $batch->entidad);
+        $this->assertSame('1', $batch->perfil_version);
+        $this->assertSame(ImportStatus::Pending->value, $batch->estado);
+        Queue::assertPushed(
+            ProcessImportBatch::class,
+            fn (ProcessImportBatch $job): bool => $job->batchId === (int) $batch->batch_id,
+        );
+    }
+
     public function test_history_and_detail_show_caja_arequipa_friendly_label(): void
     {
         $user = User::factory()->readOnly()->create();
@@ -169,5 +196,24 @@ class PortfolioImportControllerTest extends ImportFeatureTestCase
             ->assertSeeText('Entidad')
             ->assertSeeText('BBVA')
             ->assertDontSeeText('perfil_version');
+    }
+
+    public function test_history_and_detail_show_compartamos_friendly_label(): void
+    {
+        $user = User::factory()->readOnly()->create();
+        $batchId = $this->createBatch([
+            'tipo' => ImportType::Portfolio->value,
+            'entidad' => FinancialEntity::Compartamos->value,
+            'perfil_version' => '1',
+            'archivo_original' => 'COMPARTAMOS_OCTUBRE.xlsx',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('imports.index'))
+            ->assertSeeText('Cartera / Compartamos');
+
+        $this->actingAs($user)
+            ->get(route('imports.show', $batchId))
+            ->assertSeeText('Compartamos');
     }
 }

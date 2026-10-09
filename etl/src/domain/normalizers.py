@@ -7,6 +7,8 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from openpyxl.utils.datetime import from_excel
+
 from .models import CellValue, PaymentRecord, RowError, SourceRow
 
 MONEY_PATTERN = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
@@ -18,6 +20,11 @@ XLSX_FLOAT_MONEY_TOLERANCE = Decimal("0.000000001")
 MAX_DECIMAL_15_2 = Decimal("9999999999999.99")
 FOUR_DECIMALS = Decimal("0.0001")
 MAX_DECIMAL_15_4 = Decimal("99999999999.9999")
+SIX_DECIMALS = Decimal("0.000001")
+MAX_DECIMAL_18_6 = Decimal("999999999999.999999")
+DATE_PLACEHOLDER_PATTERN = re.compile(r"^[\s/]*$")
+PHONE_STRONG_SEPARATOR_PATTERN = re.compile(r"[|/;\r\n]+")
+PERU_MOBILE_PATTERN = re.compile(r"^9[0-9]{8}$")
 
 
 class FieldNormalizationError(ValueError):
@@ -32,6 +39,50 @@ def normalize_header(value: Any) -> str:
     if value is None:
         return ""
     return " ".join(str(value).replace("\u00a0", " ").strip().upper().split())
+
+
+def normalize_phone(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = re.sub(r"[^0-9]", "", value)
+    if len(normalized) == 11 and normalized.startswith("51"):
+        normalized = normalized[2:]
+    if not PERU_MOBILE_PATTERN.fullmatch(normalized) or len(set(normalized)) == 1:
+        return None
+    return normalized
+
+
+def extract_phones(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+
+    phones: list[str] = []
+    seen: set[str] = set()
+    for segment in PHONE_STRONG_SEPARATOR_PATTERN.split(value):
+        if not segment.strip():
+            continue
+        normalized_segment = normalize_phone(segment)
+        normalized_groups = tuple(
+            phone
+            for group in re.findall(r"[0-9]+", segment)
+            if (phone := normalize_phone(group)) is not None
+        )
+        candidates = normalized_groups or (
+            (normalized_segment,) if normalized_segment is not None else ()
+        )
+        for phone in candidates:
+            if phone in seen:
+                continue
+            seen.add(phone)
+            phones.append(phone)
+    return tuple(phones)
+
+
+def remove_all_whitespace(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = "".join(value.split())
+    return normalized or None
 
 
 def cell_to_text(cell: CellValue) -> str | None:
@@ -81,6 +132,44 @@ def normalize_date(cell: CellValue) -> date:
         except ValueError:
             continue
     raise FieldNormalizationError("Fecha inválida; usa YYYY-MM-DD o DD/MM/YYYY")
+
+
+def normalize_optional_excel_date(cell: CellValue) -> date | None:
+    if isinstance(cell.value, str) and DATE_PLACEHOLDER_PATTERN.fullmatch(cell.value):
+        return None
+    if cell.value is None or cell_to_text(cell) is None:
+        return None
+    if (
+        isinstance(cell.value, (int, float))
+        and not isinstance(cell.value, bool)
+        and cell.workbook_epoch is not None
+    ):
+        try:
+            converted = from_excel(cell.value, cell.workbook_epoch)
+        except (OverflowError, TypeError, ValueError) as exception:
+            raise FieldNormalizationError("Fecha Excel inválida") from exception
+        if isinstance(converted, datetime):
+            return converted.date()
+        if isinstance(converted, date):
+            return converted
+        raise FieldNormalizationError("Fecha Excel inválida")
+    return normalize_date(cell)
+
+
+def normalize_year(cell: CellValue) -> int | None:
+    text = cell_to_text(cell)
+    if text is None:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation as exception:
+        raise FieldNormalizationError("Año inválido") from exception
+    if not value.is_finite() or value != value.to_integral_value():
+        raise FieldNormalizationError("Año debe ser un número entero")
+    year = int(value)
+    if not 1900 <= year <= 2100:
+        raise FieldNormalizationError("Año debe estar entre 1900 y 2100")
+    return year
 
 
 def normalize_money(
@@ -137,6 +226,26 @@ def normalize_decimal_15_4(cell: CellValue, *, field_label: str) -> Decimal:
         raise FieldNormalizationError(f"{field_label} admite como máximo cuatro decimales")
     if abs(quantized) > MAX_DECIMAL_15_4:
         raise FieldNormalizationError(f"{field_label} excede DECIMAL(15,4)")
+    return quantized
+
+
+def normalize_decimal_18_6(cell: CellValue, *, field_label: str) -> Decimal:
+    text = cell_to_text(cell)
+    normalized = "" if text is None else text.replace(",", "").strip()
+    if not MONEY_PATTERN.fullmatch(normalized):
+        raise FieldNormalizationError(f"{field_label} inválido")
+    try:
+        value = Decimal(normalized)
+        quantized = value.quantize(SIX_DECIMALS)
+    except InvalidOperation as exception:
+        raise FieldNormalizationError(f"{field_label} inválido") from exception
+    difference = abs(value - quantized)
+    if value != quantized and not (
+        cell.is_xlsx_float and difference <= XLSX_FLOAT_MONEY_TOLERANCE
+    ):
+        raise FieldNormalizationError(f"{field_label} admite como máximo seis decimales")
+    if abs(quantized) > MAX_DECIMAL_18_6:
+        raise FieldNormalizationError(f"{field_label} excede DECIMAL(18,6)")
     return quantized
 
 

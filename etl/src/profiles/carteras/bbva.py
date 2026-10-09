@@ -22,6 +22,7 @@ from ...domain.normalizers import (
     normalize_date,
     normalize_money,
     normalize_optional_text,
+    normalize_phone,
     normalize_required_text,
     value_for_error,
 )
@@ -92,12 +93,24 @@ class BbvaV1Profile(BaseCarteraProfile):
                 )
 
         contacts: list[PortfolioContact] = []
+        seen_phones: set[str] = set()
         for order in range(1, 6):
-            phone = self._optional_text_field(row, f"fono{order}", 100, errors, batch_id, ingested_at, error_value_max_length)
+            phone = normalize_phone(
+                self._optional_text_field(
+                    row,
+                    f"fono{order}",
+                    100,
+                    errors,
+                    batch_id,
+                    ingested_at,
+                    error_value_max_length,
+                )
+            )
             phone_type = self._optional_text_field(row, f"tipofono{order}", 50, errors, batch_id, ingested_at, error_value_max_length)
             prefix = self._optional_text_field(row, f"prefijo{order}", 30, errors, batch_id, ingested_at, error_value_max_length)
             extension = self._optional_text_field(row, f"extension{order}", 30, errors, batch_id, ingested_at, error_value_max_length)
-            if phone is not None:
+            if phone is not None and phone not in seen_phones:
+                seen_phones.add(phone)
                 contacts.append(
                     PortfolioContact(
                         telefono=phone,

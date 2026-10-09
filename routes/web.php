@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\ImportDeletionController;
 use App\Http\Controllers\ImportFileController;
 use App\Http\Controllers\ImportProcessController;
 use App\Http\Controllers\PaymentController;
@@ -41,6 +42,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/{batch_id}', [ImportController::class, 'show'])
             ->whereNumber('batch_id')
             ->name('show');
+        Route::delete('/{batch_id}', ImportDeletionController::class)
+            ->middleware('can:administer')
+            ->whereNumber('batch_id')
+            ->name('destroy');
     });
 
     Route::middleware('can:view-data')->prefix('pagos')->name('payments.')->group(function (): void {

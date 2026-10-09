@@ -36,4 +36,32 @@ return [
         'allowed' => [25, 50, 100],
         'errors' => 50,
     ],
+
+    'deletion' => [
+        'audit_table' => 'import_deletion_log',
+        'entity_tables' => [
+            'BBVA' => [
+                'kp_silver.cartera_contactos',
+                'kp_silver.cartera_direcciones',
+                'kp_silver.cartera_operaciones',
+                'kp_bronze.raw_cartera_bbva',
+            ],
+            'CAJA_AREQUIPA' => [
+                'kp_silver.cartera_caja_arequipa_detalle',
+                'kp_silver.cartera_avales',
+                'kp_silver.cartera_garantias',
+                'kp_silver.cartera_contactos',
+                'kp_silver.cartera_direcciones',
+                'kp_silver.cartera_operaciones',
+                'kp_bronze.raw_cartera_caja_arequipa',
+            ],
+            'COMPARTAMOS' => [
+                'kp_silver.cartera_compartamos_detalle',
+                'kp_silver.cartera_contactos',
+                'kp_silver.cartera_direcciones',
+                'kp_silver.cartera_operaciones',
+                'kp_bronze.raw_cartera_compartamos',
+            ],
+        ],
+    ],
 ];

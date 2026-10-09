@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
-
-from openpyxl.utils.datetime import from_excel
 
 from ...domain.errors import StructuralFileError
 from ...domain.models import (
@@ -28,16 +25,38 @@ from ...domain.models import (
 from ...domain.normalizers import (
     FieldNormalizationError,
     cell_to_text,
-    normalize_date,
+    extract_phones,
     normalize_decimal_15_4,
     normalize_money,
+    normalize_optional_excel_date,
     normalize_optional_text,
     normalize_required_text,
+    remove_all_whitespace,
     value_for_error,
 )
 from .base import BaseCarteraProfile
 
-DATE_PLACEHOLDER_PATTERN = re.compile(r"^[\s/]*$")
+
+def extract_caja_contact_values(
+    holder_phone: str | None,
+    management_phone: str | None,
+) -> tuple[tuple[str, str], ...]:
+    contacts: list[tuple[str, str]] = []
+    seen_phones: set[str] = set()
+    for value, contact_type in (
+        (holder_phone, "TITULAR"),
+        (management_phone, "GESTION"),
+    ):
+        for phone in extract_phones(value):
+            if phone in seen_phones:
+                continue
+            seen_phones.add(phone)
+            contacts.append((phone, contact_type))
+    return tuple(contacts)
+
+
+def normalize_caja_guarantor_phone(value: str | None) -> str | None:
+    return "|".join(extract_phones(value)) or None
 
 
 class CajaArequipaV1Profile(BaseCarteraProfile):
@@ -125,7 +144,7 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
             "DEPARTAMENTO": lambda cell: normalize_optional_text(cell, 100, "DEPARTAMENTO"),
             "PROVINCIA": lambda cell: normalize_optional_text(cell, 100, "PROVINCIA"),
             "DISTRITO": lambda cell: normalize_optional_text(cell, 100, "DISTRITO"),
-            "COSECHA": lambda cell: normalize_optional_text(cell, 100, "COSECHA"),
+            "COSECHA": self._harvest,
         }
         for field, rule in rules.items():
             self._apply_rule(
@@ -300,23 +319,41 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
         value_limit: int,
     ) -> tuple[PortfolioContact, ...]:
         contacts: list[PortfolioContact] = []
-        for field, contact_type in (("TEL_TIT", "TITULAR"), ("TEL_GES", "GESTION")):
-            value = self._optional_text(row, field, 500, errors, batch_id, ingested_at, value_limit)
-            for segment in self._phone_segments(value):
-                if len(segment) > 100:
-                    errors.append(
-                        self._error(
-                            batch_id,
-                            row.number,
-                            field,
-                            row.values.get(field, CellValue(None)),
-                            FieldNormalizationError(f"{field} contiene un teléfono mayor de 100 caracteres"),
-                            ingested_at,
-                            value_limit,
-                        )
+        source_values = {
+            field: self._optional_text(
+                row,
+                field,
+                500,
+                errors,
+                batch_id,
+                ingested_at,
+                value_limit,
+            )
+            for field in ("TEL_TIT", "TEL_GES")
+        }
+        for phone, contact_type in extract_caja_contact_values(
+            source_values["TEL_TIT"],
+            source_values["TEL_GES"],
+        ):
+            if len(phone) > 100:
+                field = "TEL_TIT" if contact_type == "TITULAR" else "TEL_GES"
+                errors.append(
+                    self._error(
+                        batch_id,
+                        row.number,
+                        field,
+                        row.values.get(field, CellValue(None)),
+                        FieldNormalizationError(
+                            f"{field} contiene un teléfono mayor de 100 caracteres"
+                        ),
+                        ingested_at,
+                        value_limit,
                     )
-                    continue
-                contacts.append(PortfolioContact(segment, contact_type, None, None, len(contacts) + 1))
+                )
+                continue
+            contacts.append(
+                PortfolioContact(phone, contact_type, None, None, len(contacts) + 1)
+            )
         return tuple(contacts)
 
     def _addresses(
@@ -378,6 +415,8 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
                 "DIS_AVAL": 255,
             }.items()
         }
+        guarantor_phone = normalize_caja_guarantor_phone(values["TEL_AVAL"])
+        values["TEL_AVAL"] = guarantor_phone
         if not any(value is not None for value in values.values()):
             return None
         return PortfolioGuarantor(
@@ -385,7 +424,7 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
             nombre_aval=values["NOM_AVAL"],
             tipo_documento=values["TIP_DOC_AVAL"],
             documento_aval=values["NRO_DOC_AVAL"],
-            telefono="|".join(self._phone_segments(values["TEL_AVAL"])) or None,
+            telefono=guarantor_phone,
             direccion=values["DIR_AVAL"],
             referencia=values["REF_AVAL"],
             distrito=values["DIS_AVAL"],
@@ -418,14 +457,9 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
         return tuple(guarantees)
 
     @staticmethod
-    def _phone_segments(value: str | None) -> tuple[str, ...]:
-        if value is None:
-            return ()
-        return tuple(
-            normalized
-            for segment in value.split("|")
-            if (normalized := re.sub(r"\s+", "", segment.strip()))
-        )
+    def _harvest(cell: CellValue) -> str | None:
+        value = normalize_optional_text(cell, 100, "COSECHA")
+        return remove_all_whitespace(value)
 
     @staticmethod
     def _currency(cell: CellValue) -> str | None:
@@ -465,25 +499,7 @@ class CajaArequipaV1Profile(BaseCarteraProfile):
 
     @staticmethod
     def _optional_date(cell: CellValue) -> date | None:
-        if isinstance(cell.value, str) and DATE_PLACEHOLDER_PATTERN.fullmatch(cell.value):
-            return None
-        if cell.value is None or cell_to_text(cell) is None:
-            return None
-        if (
-            isinstance(cell.value, (int, float))
-            and not isinstance(cell.value, bool)
-            and cell.workbook_epoch is not None
-        ):
-            try:
-                converted = from_excel(cell.value, cell.workbook_epoch)
-            except (OverflowError, TypeError, ValueError) as exception:
-                raise FieldNormalizationError("Fecha Excel inválida") from exception
-            if isinstance(converted, datetime):
-                return converted.date()
-            if isinstance(converted, date):
-                return converted
-            raise FieldNormalizationError("Fecha Excel inválida")
-        return normalize_date(cell)
+        return normalize_optional_excel_date(cell)
 
     def _optional_text(
         self,

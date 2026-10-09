@@ -123,6 +123,7 @@ class ImportUploadService
         $batchId = null;
         $temporaryPath = '';
         $finalPath = '';
+        $registeredAt = now('UTC');
 
         try {
             $internalName = Str::uuid()->toString().'.'.$metadata->extension;
@@ -139,7 +140,7 @@ class ImportUploadService
                 'archivo_mime' => $metadata->mimeType,
                 'archivo_tamano' => $metadata->size,
                 'archivo_sha256' => $metadata->sha256,
-                'fecha_inicio' => now('UTC')->format('Y-m-d H:i:s'),
+                'fecha_inicio' => $registeredAt->format('Y-m-d H:i:s'),
                 'fecha_fin' => null,
                 'estado' => ImportStatus::Received->value,
                 'filas_archivo' => 0,
@@ -150,8 +151,7 @@ class ImportUploadService
                 'mensaje_error' => null,
             ], 'batch_id');
 
-            $directory = now('UTC')->format('Y/m').'/'.$batchId;
-            $finalPath = $directory.'/'.$internalName;
+            $finalPath = $this->files->pathForBatch($batchId, $internalName, $registeredAt);
             $temporaryPath = $finalPath.'.part';
 
             $this->files->storeFromPath($sourcePath, $temporaryPath);
