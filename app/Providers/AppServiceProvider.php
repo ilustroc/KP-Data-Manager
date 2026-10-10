@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\Reports\GoogleDriveManagementHistoryReportStorage;
+use App\Services\Reports\ManagementHistoryReportStorage;
 use App\UserRole;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Schema\Builder;
@@ -19,7 +21,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(
+            ManagementHistoryReportStorage::class,
+            GoogleDriveManagementHistoryReportStorage::class,
+        );
     }
 
     /**
