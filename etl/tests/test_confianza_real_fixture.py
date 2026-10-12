@@ -61,11 +61,11 @@ def test_real_confianza_sample_matches_v1_contract_without_persistence():
     cast_date_cell = first_source_row.values["Fecha Castigo"]
     assert to_excel(cast_date_cell.value, cast_date_cell.workbook_epoch) == 43062
     assert [contact.telefono for contact in first_record.contacts] == ["961931445"]
-    assert first_record.operation.moneda is None
+    assert first_record.operation.moneda == "PEN"
     assert first_record.detail.moneda_origen == "0"
     assert first_record.operation.saldo_capital == Decimal("337.55")
     assert first_record.operation.saldo_capital == first_record.detail.saldo_capital_mn
-    assert first_record.operation.deuda_total is None
+    assert first_record.operation.deuda_total == Decimal("619.36")
     assert first_record.operation.cosecha == "CONFIANZA"
     assert first_record.detail.nombre_modulo_origen == "INCLUSION"
     assert first_record.detail.estado_operacion == "PREJUDICIAL"
@@ -78,7 +78,7 @@ def test_real_confianza_sample_matches_v1_contract_without_persistence():
     assert len(invalid_phone_records) == 1
     assert invalid_phone_records[0].contacts == ()
     assert all(record.operation.cosecha == "CONFIANZA" for record in records)
-    assert all(record.operation.moneda is None for record in records)
+    assert all(record.operation.moneda == "PEN" for record in records)
     assert all(record.detail.moneda_origen == "0" for record in records)
-    assert all(record.operation.deuda_total is None for record in records)
+    assert all(record.operation.deuda_total is not None for record in records)
     assert all(isinstance(record, ConfianzaPortfolioRecord) for record in records)

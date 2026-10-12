@@ -155,6 +155,26 @@ class ConfianzaV1Profile(BaseCarteraProfile):
                 ),
             )
 
+        currency_code = normalized.get("Moneda")
+        canonical_currency = self._canonical_currency(currency_code)
+        canonical_capital = self._canonical_capital(currency_code, normalized)
+        debt_total = None
+        if not errors:
+            try:
+                debt_total = self._debt_total(currency_code, canonical_capital, normalized)
+            except (FieldNormalizationError, InvalidOperation, ValueError) as exception:
+                errors.append(
+                    self._error(
+                        batch_id,
+                        row.number,
+                        "deuda_total",
+                        CellValue(None),
+                        exception,
+                        ingested_at,
+                        error_value_max_length,
+                    )
+                )
+
         if errors:
             return None, errors
 
@@ -168,9 +188,9 @@ class ConfianzaV1Profile(BaseCarteraProfile):
             operacion=normalized["Operacion"],
             identificador_origen=None,
             nombre_cliente=normalized["Nombre del Deudor"],
-            moneda=None,
-            saldo_capital=normalized["Saldo Capital MN"],
-            deuda_total=None,
+            moneda=canonical_currency,
+            saldo_capital=canonical_capital,
+            deuda_total=debt_total,
             interes=normalized["Interés Compensatorio"],
             mora=normalized["Interés Moratorio"],
             fecha_castigo=normalized["Fecha Castigo"],
@@ -218,6 +238,44 @@ class ConfianzaV1Profile(BaseCarteraProfile):
             ),
             [],
         )
+
+    @staticmethod
+    def _canonical_currency(currency_code: str | None) -> str | None:
+        return {"0": "PEN", "101": "USD"}.get(currency_code)
+
+    @staticmethod
+    def _canonical_capital(
+        currency_code: str | None,
+        normalized: dict[str, Any],
+    ) -> Decimal | None:
+        if currency_code == "0":
+            return normalized["Saldo Capital MN"]
+        if currency_code == "101":
+            return normalized["Saldo Capital MO"]
+        return None
+
+    @staticmethod
+    def _debt_total(
+        currency_code: str | None,
+        canonical_capital: Decimal | None,
+        normalized: dict[str, Any],
+    ) -> Decimal | None:
+        if currency_code not in {"0", "101"}:
+            return None
+        components = (
+            canonical_capital,
+            normalized["Interés Vencido"],
+            normalized["Interés Compensatorio"],
+            normalized["Interés Moratorio"],
+            normalized["Seguros"],
+            normalized["Comisiones"],
+            normalized["Gastos Judiciales"],
+        )
+        total = sum(
+            (component if component is not None else Decimal("0.00") for component in components),
+            Decimal("0.00"),
+        )
+        return normalize_money(CellValue(total), field_label="Deuda total")
 
     def _source_values(
         self,

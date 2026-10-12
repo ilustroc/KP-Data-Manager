@@ -54,7 +54,10 @@ def source_values(**overrides: object) -> dict[str, CellValue]:
         }
     )
     values.update(overrides)
-    return {column: CellValue(value) for column, value in values.items()}
+    return {
+        column: value if isinstance(value, CellValue) else CellValue(value)
+        for column, value in values.items()
+    }
 
 
 def normalize(**overrides: object):
@@ -130,14 +133,14 @@ def test_identity_common_values_geography_and_business_fields_are_mapped():
     assert record.operation.distrito == "LIMA"
 
 
-def test_money_fields_are_preserved_and_common_values_do_not_invent_business_rules():
+def test_pen_money_fields_are_preserved_and_common_values_follow_confirmed_rules():
     record, errors = normalize()
 
     assert errors == []
     assert record is not None
-    assert record.operation.moneda is None
+    assert record.operation.moneda == "PEN"
     assert record.operation.saldo_capital == Decimal("3500.20")
-    assert record.operation.deuda_total is None
+    assert record.operation.deuda_total == Decimal("3913.50")
     assert record.operation.interes == Decimal("200.40")
     assert record.operation.mora == Decimal("50.50")
     assert record.detail.saldo_capital_mo == Decimal("1000.10")
@@ -149,6 +152,151 @@ def test_money_fields_are_preserved_and_common_values_do_not_invent_business_rul
     assert record.detail.comisiones == Decimal("20.70")
     assert record.detail.gastos_judiciales == Decimal("30.80")
     assert record.detail.moneda_origen == "0"
+
+
+@pytest.mark.parametrize(
+    ("raw_currency", "expected_currency", "expected_origin"),
+    [
+        (0, "PEN", "0"),
+        ("0", "PEN", "0"),
+        (CellValue(0.0, is_xlsx_float=True), "PEN", "0"),
+        (101, "USD", "101"),
+        ("101", "USD", "101"),
+        (CellValue(101.0, is_xlsx_float=True), "USD", "101"),
+    ],
+)
+def test_known_currency_codes_map_numeric_text_and_xlsx_values(
+    raw_currency: object,
+    expected_currency: str,
+    expected_origin: str,
+):
+    record, errors = normalize(Moneda=raw_currency)
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.moneda == expected_currency
+    assert record.detail.moneda_origen == expected_origin
+
+
+def test_unknown_currency_is_preserved_without_canonical_capital_or_debt():
+    record, errors = normalize(Moneda="999")
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.moneda is None
+    assert record.operation.saldo_capital is None
+    assert record.operation.deuda_total is None
+    assert record.detail.moneda_origen == "999"
+    assert record.detail.saldo_capital_mo == Decimal("1000.10")
+    assert record.detail.saldo_capital_mn == Decimal("3500.20")
+
+
+def test_usd_uses_only_foreign_currency_capital_for_total_debt():
+    record, errors = normalize(Moneda=101)
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.moneda == "USD"
+    assert record.operation.saldo_capital == Decimal("1000.10")
+    assert record.operation.deuda_total == Decimal("1413.40")
+    assert record.operation.deuda_total != Decimal("4913.60")
+    assert record.detail.saldo_capital_mo == Decimal("1000.10")
+    assert record.detail.saldo_capital_mn == Decimal("3500.20")
+
+
+def test_confirmed_pen_debt_example_totals_619_36():
+    record, errors = normalize(
+        Moneda=0,
+        **{
+            "Saldo Capital MO": "9999.99",
+            "Saldo Capital MN": "337.55",
+            "Interés Vencido": "15.49",
+            "Interés Compensatorio": "116.03",
+            "Interés Moratorio": "0",
+            "Seguros": "0",
+            "Comisiones": "0",
+            "Gastos Judiciales": "150.29",
+        },
+    )
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.saldo_capital == Decimal("337.55")
+    assert record.operation.deuda_total == Decimal("619.36")
+    assert record.operation.deuda_total != Decimal("10619.35")
+
+
+def test_missing_debt_components_are_zero_without_hiding_present_values():
+    record, errors = normalize(
+        **{
+            "Interés Vencido": None,
+            "Interés Compensatorio": None,
+            "Interés Moratorio": None,
+            "Seguros": None,
+            "Comisiones": None,
+            "Gastos Judiciales": None,
+        }
+    )
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.saldo_capital == Decimal("3500.20")
+    assert record.operation.deuda_total == Decimal("3500.20")
+
+
+def test_missing_selected_capital_is_zero_for_debt_when_currency_is_known():
+    record, errors = normalize(
+        **{
+            "Saldo Capital MN": None,
+            "Interés Vencido": "15.49",
+            "Interés Compensatorio": None,
+            "Interés Moratorio": None,
+            "Seguros": None,
+            "Comisiones": None,
+            "Gastos Judiciales": None,
+        }
+    )
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.moneda == "PEN"
+    assert record.operation.saldo_capital is None
+    assert record.operation.deuda_total == Decimal("15.49")
+
+
+def test_debt_total_uses_decimal_without_binary_floating_point_error():
+    record, errors = normalize(
+        **{
+            "Saldo Capital MN": "0.10",
+            "Interés Vencido": "0.20",
+            "Interés Compensatorio": None,
+            "Interés Moratorio": None,
+            "Seguros": None,
+            "Comisiones": None,
+            "Gastos Judiciales": None,
+        }
+    )
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.deuda_total == Decimal("0.30")
+
+
+def test_debt_total_overflow_is_reported_as_a_controlled_row_error():
+    record, errors = normalize(
+        **{
+            "Saldo Capital MN": "9999999999999.99",
+            "Interés Vencido": "0.01",
+            "Interés Compensatorio": None,
+            "Interés Moratorio": None,
+            "Seguros": None,
+            "Comisiones": None,
+            "Gastos Judiciales": None,
+        }
+    )
+
+    assert record is None
+    assert any(error.field == "deuda_total" for error in errors)
 
 
 def test_specific_fields_reach_confianza_detail():

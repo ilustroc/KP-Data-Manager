@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -333,7 +334,13 @@ def test_confianza_chunk_persists_bronze_common_and_detail_rows_in_one_transacti
     detail_rows = next(
         rows for sql, rows in statements.items() if "cartera_confianza_detalle" in sql
     )
+    operation_rows = next(
+        rows for sql, rows in statements.items() if "cartera_operaciones" in sql
+    )
     assert len(raw_rows[0]) == 32
+    assert operation_rows[0][8] == "PEN"
+    assert operation_rows[0][9] == Decimal("100.00")
+    assert operation_rows[0][10] == Decimal("111.00")
     assert detail_rows[0][1] == "00003862"
     assert detail_rows[0][10] == "0"
     assert detail_rows[0][15] == "CASTIGADO"
