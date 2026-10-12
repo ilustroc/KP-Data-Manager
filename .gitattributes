@@ -1,5 +1,13 @@
 * text=auto eol=lf
 
+# Binary assets
+*.png -text -diff
+*.jpg -text -diff
+*.jpeg -text -diff
+*.gif -text -diff
+*.webp -text -diff
+*.ico -text -diff
+
 *.blade.php diff=html
 *.css diff=css
 *.html diff=html
