@@ -319,6 +319,12 @@ def test_confianza_chunk_persists_bronze_common_and_detail_rows_in_one_transacti
     sql_text = "\n".join(statements)
     assert connection.began and connection.committed and not connection.rolled_back
     assert "raw_cartera_confianza" in sql_text
+    assert "`interes_vencido`" in sql_text
+    assert "`codigo_sucursal_credito`" in sql_text
+    assert "`estado_operacion`" in sql_text
+    assert "`Interés Vencido`" not in sql_text
+    assert "`Código de Sucursal de Crédito`" not in sql_text
+    assert "`Estado de la Operación`" not in sql_text
     assert "cartera_operaciones" in sql_text
     assert "cartera_contactos" in sql_text
     assert "cartera_direcciones" in sql_text
@@ -354,6 +360,7 @@ def test_confianza_ddl_preserves_exact_source_order_metadata_and_detail_types():
         root / "database/sql/021_create_cartera_confianza_detalle.sql"
     ).read_text(encoding="utf-8")
     declared_columns = re.findall(r"^\s+`([^`]+)`\s+", bronze_ddl, flags=re.MULTILINE)
+    detail_columns = re.findall(r"^\s+`([^`]+)`\s+", detail_ddl, flags=re.MULTILINE)
 
     assert declared_columns[:27] == list(CONFIANZA_BRONZE_COLUMNS)
     assert len(CONFIANZA_SOURCE_COLUMNS) == 27
@@ -366,7 +373,9 @@ def test_confianza_ddl_preserves_exact_source_order_metadata_and_detail_types():
         "row_hash",
         "ingested_at",
     ]
-    assert re.search(r"^\s+`Calle y Numero` TEXT NULL,$", bronze_ddl, flags=re.MULTILINE)
+    assert all(column.isascii() for column in declared_columns)
+    assert all(re.fullmatch(r"[a-z][a-z0-9_]*", column) for column in declared_columns)
+    assert re.search(r"^\s+`calle_numero` TEXT NULL,$", bronze_ddl, flags=re.MULTILINE)
     assert not re.search(r"^\s*UNIQUE\s", bronze_ddl, flags=re.MULTILINE | re.IGNORECASE)
     for field in (
         "saldo_capital_mo",
@@ -378,6 +387,31 @@ def test_confianza_ddl_preserves_exact_source_order_metadata_and_detail_types():
         "comisiones",
         "gastos_judiciales",
     ):
-        assert f"`{field}` DECIMAL(15,2) NULL" in detail_ddl
+        assert re.search(
+            rf"`{field}` DECIMAL\(15,\s*2\) NULL",
+            detail_ddl,
+        )
+    assert detail_columns == [
+        "id",
+        "operacion_id",
+        "documento_cliente",
+        "saldo_capital_mo",
+        "saldo_capital_mn",
+        "interes_vencido",
+        "interes_compensatorio",
+        "interes_moratorio",
+        "seguros",
+        "comisiones",
+        "gastos_judiciales",
+        "moneda_origen",
+        "codigo_sucursal_credito",
+        "nombre_sucursal_credito",
+        "corredor",
+        "nombre_modulo_origen",
+        "estado_operacion",
+        "batch_id",
+        "source_raw_id",
+        "created_at",
+    ]
     assert "FOREIGN KEY" not in bronze_ddl.upper()
     assert "FOREIGN KEY" not in detail_ddl.upper()

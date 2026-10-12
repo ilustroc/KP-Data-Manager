@@ -75,6 +75,23 @@ def test_header_requires_exact_27_positions_and_trims_unicode_padding():
     assert len(CONFIANZA_SOURCE_COLUMNS) == 27
     assert len(CONFIANZA_BRONZE_COLUMNS) == 27
     assert tuple(mapping) == CONFIANZA_SOURCE_COLUMNS
+    assert "Interés Vencido" in mapping
+    assert "Código de Sucursal de Crédito" in mapping
+    assert "Estado de la Operación" in mapping
+
+
+def test_source_headers_map_positionally_to_snake_case_bronze_columns():
+    source_to_bronze = dict(
+        zip(CONFIANZA_SOURCE_COLUMNS, CONFIANZA_BRONZE_COLUMNS, strict=True)
+    )
+
+    assert source_to_bronze["Interés Vencido"] == "interes_vencido"
+    assert (
+        source_to_bronze["Código de Sucursal de Crédito"]
+        == "codigo_sucursal_credito"
+    )
+    assert source_to_bronze["Estado de la Operación"] == "estado_operacion"
+    assert len(source_to_bronze) == 27
 
 
 @pytest.mark.parametrize(

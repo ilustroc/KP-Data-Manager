@@ -297,7 +297,35 @@ CONFIANZA_SOURCE_COLUMNS = (
     "COSECHA",
 )
 
-CONFIANZA_BRONZE_COLUMNS = CONFIANZA_SOURCE_COLUMNS
+CONFIANZA_BRONZE_COLUMNS = (
+    "dni",
+    "cuenta_cliente",
+    "nombre_deudor",
+    "calle_numero",
+    "ubigeo",
+    "departamento",
+    "provincia",
+    "distrito",
+    "operacion",
+    "saldo_capital_mo",
+    "saldo_capital_mn",
+    "interes_vencido",
+    "interes_compensatorio",
+    "interes_moratorio",
+    "seguros",
+    "comisiones",
+    "gastos_judiciales",
+    "moneda",
+    "codigo_sucursal_credito",
+    "nombre_sucursal_credito",
+    "territorio",
+    "corredor",
+    "fecha_castigo",
+    "telefono",
+    "nombre_modulo_origen",
+    "estado_operacion",
+    "cosecha",
+)
 
 
 @dataclass(frozen=True, slots=True)
