@@ -9,6 +9,7 @@ import pytest
 from src.domain.models import (
     BBVA_SOURCE_COLUMNS,
     CAJA_AREQUIPA_SOURCE_COLUMNS,
+    CONFIANZA_SOURCE_COLUMNS,
     CellValue,
     SourceRow,
 )
@@ -16,6 +17,7 @@ from src.domain.errors import StructuralFileError
 from src.loaders.cartera_loader import CarteraLoader
 from src.profiles.carteras.bbva import BbvaV1Profile
 from src.profiles.carteras.caja_arequipa import CajaArequipaV1Profile
+from src.profiles.carteras.confianza import ConfianzaV1Profile
 
 from .conftest import FakeCarteraDatabase, make_batch, stage_file
 
@@ -210,3 +212,57 @@ def test_caja_arequipa_failed_chunk_is_not_counted_as_inserted(settings, tmp_pat
     assert database.final_stats is not None
     assert database.final_stats.inserted_rows == 0
     assert database.failed_message is not None
+
+
+def test_confianza_loader_keeps_valid_rows_when_another_row_has_financial_errors(
+    settings,
+    tmp_path: Path,
+):
+    source = tmp_path / "confianza.csv"
+    source.write_text("placeholder", encoding="utf-8")
+    _, fingerprint = stage_file(settings, source, "2026/10/12/confianza.csv")
+    database = FakeCarteraDatabase(
+        make_batch(
+            relative_path="2026/10/12/confianza.csv",
+            original_name="confianza.csv",
+            sha256=fingerprint,
+            tipo="CARTERA",
+            entidad="CONFIANZA",
+            perfil_version="1",
+        )
+    )
+
+    def row_values(operation: str, capital: str) -> dict[str, CellValue]:
+        values = {column: CellValue(None) for column in CONFIANZA_SOURCE_COLUMNS}
+        values.update(
+            {
+                "DNI": CellValue("00003862"),
+                "Cuenta Cliente": CellValue("001"),
+                "Operacion": CellValue(operation),
+                "Saldo Capital MN": CellValue(capital),
+                "Telefono": CellValue("934043966"),
+            }
+        )
+        return values
+
+    class GeneratedParser:
+        def rows(self, path: Path):
+            yield SourceRow(2, row_values("001", "100.00"))
+            yield SourceRow(3, row_values("002", "NO NUMÉRICO"))
+
+    result = CarteraLoader(
+        database,
+        settings,
+        ConfianzaV1Profile(),
+        clock=fixed_clock,
+        parsers={"csv": GeneratedParser()},
+    ).process(123)
+
+    assert result.status == "COMPLETADO_CON_ERRORES"
+    assert result.stats.file_rows == 2
+    assert result.stats.inserted_rows == 1
+    assert result.stats.error_rows == 1
+    assert database.portfolio_records[0].operation.entidad == "CONFIANZA"
+    assert database.portfolio_records[0].batch_id == 123
+    assert database.portfolio_records[0].source_row == 2
+    assert database.errors[0].field == "Saldo Capital MN"

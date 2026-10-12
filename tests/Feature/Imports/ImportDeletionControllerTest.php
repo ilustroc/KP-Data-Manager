@@ -446,6 +446,7 @@ class ImportDeletionControllerTest extends ImportFeatureTestCase
             'BBVA' => ['BBVA'],
             'Caja Arequipa' => ['CAJA_AREQUIPA'],
             'Compartamos' => ['COMPARTAMOS'],
+            'Financiera Confianza' => ['CONFIANZA'],
         ];
     }
 

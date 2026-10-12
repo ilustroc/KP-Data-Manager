@@ -267,6 +267,39 @@ COMPARTAMOS_SOURCE_COLUMNS = (
 COMPARTAMOS_BRONZE_COLUMNS = COMPARTAMOS_SOURCE_COLUMNS
 
 
+CONFIANZA_SOURCE_COLUMNS = (
+    "DNI",
+    "Cuenta Cliente",
+    "Nombre del Deudor",
+    "Calle y Numero",
+    "Ubigeo",
+    "Departamento_",
+    "Provincia",
+    "Distrito",
+    "Operacion",
+    "Saldo Capital MO",
+    "Saldo Capital MN",
+    "Interés Vencido",
+    "Interés Compensatorio",
+    "Interés Moratorio",
+    "Seguros",
+    "Comisiones",
+    "Gastos Judiciales",
+    "Moneda",
+    "Código de Sucursal de Crédito",
+    "Nombre Sucursal de Crédito",
+    "Territorio",
+    "Corredor",
+    "Fecha Castigo",
+    "Telefono",
+    "Nombre_modulo Origen",
+    "Estado de la Operación",
+    "COSECHA",
+)
+
+CONFIANZA_BRONZE_COLUMNS = CONFIANZA_SOURCE_COLUMNS
+
+
 @dataclass(frozen=True, slots=True)
 class CajaArequipaDetail:
     analista: str | None
@@ -368,7 +401,54 @@ class CompartamosPortfolioRecord:
         )
 
 
-PortfolioRecord = BbvaPortfolioRecord | CajaArequipaPortfolioRecord | CompartamosPortfolioRecord
+@dataclass(frozen=True, slots=True)
+class ConfianzaDetail:
+    saldo_capital_mo: Decimal | None
+    saldo_capital_mn: Decimal | None
+    interes_vencido: Decimal | None
+    interes_compensatorio: Decimal | None
+    interes_moratorio: Decimal | None
+    seguros: Decimal | None
+    comisiones: Decimal | None
+    gastos_judiciales: Decimal | None
+    moneda_origen: str | None
+    codigo_sucursal_credito: str | None
+    nombre_sucursal_credito: str | None
+    corredor: str | None
+    nombre_modulo_origen: str | None
+    estado_operacion: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ConfianzaPortfolioRecord:
+    source_values: tuple[str | None, ...]
+    source_row: int
+    source_file: str
+    batch_id: int
+    row_hash: str
+    ingested_at: datetime
+    operation: PortfolioOperation
+    detail: ConfianzaDetail
+    contacts: tuple[PortfolioContact, ...]
+    addresses: tuple[PortfolioAddress, ...]
+
+    def raw_insert_tuple(self) -> tuple[Any, ...]:
+        return (
+            *self.source_values,
+            self.batch_id,
+            self.source_row,
+            self.source_file,
+            self.row_hash,
+            self.ingested_at,
+        )
+
+
+PortfolioRecord = (
+    BbvaPortfolioRecord
+    | CajaArequipaPortfolioRecord
+    | CompartamosPortfolioRecord
+    | ConfianzaPortfolioRecord
+)
 
 
 @dataclass(slots=True)

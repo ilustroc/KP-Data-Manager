@@ -62,6 +62,13 @@ return [
                 'kp_silver.cartera_operaciones',
                 'kp_bronze.raw_cartera_compartamos',
             ],
+            'CONFIANZA' => [
+                'kp_silver.cartera_confianza_detalle',
+                'kp_silver.cartera_contactos',
+                'kp_silver.cartera_direcciones',
+                'kp_silver.cartera_operaciones',
+                'kp_bronze.raw_cartera_confianza',
+            ],
         ],
     ],
 ];

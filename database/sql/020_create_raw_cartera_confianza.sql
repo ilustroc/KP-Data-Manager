@@ -1,0 +1,42 @@
+-- KP Data Manager - Carteras / Financiera Confianza v1
+-- MySQL 5.7.33 compatible. Revisión y ejecución manual obligatorias.
+-- Preserva las 27 posiciones fuente; row_hash es una huella técnica NO UNIQUE.
+
+CREATE TABLE `kp_bronze`.`raw_cartera_confianza` (
+    `DNI` VARCHAR(100) NULL,
+    `Cuenta Cliente` VARCHAR(100) NULL,
+    `Nombre del Deudor` VARCHAR(255) NULL,
+    `Calle y Numero` TEXT NULL,
+    `Ubigeo` VARCHAR(100) NULL,
+    `Departamento_` VARCHAR(255) NULL,
+    `Provincia` VARCHAR(255) NULL,
+    `Distrito` VARCHAR(255) NULL,
+    `Operacion` VARCHAR(100) NULL,
+    `Saldo Capital MO` VARCHAR(100) NULL,
+    `Saldo Capital MN` VARCHAR(100) NULL,
+    `Interés Vencido` VARCHAR(100) NULL,
+    `Interés Compensatorio` VARCHAR(100) NULL,
+    `Interés Moratorio` VARCHAR(100) NULL,
+    `Seguros` VARCHAR(100) NULL,
+    `Comisiones` VARCHAR(100) NULL,
+    `Gastos Judiciales` VARCHAR(100) NULL,
+    `Moneda` VARCHAR(50) NULL,
+    `Código de Sucursal de Crédito` VARCHAR(100) NULL,
+    `Nombre Sucursal de Crédito` VARCHAR(255) NULL,
+    `Territorio` VARCHAR(100) NULL,
+    `Corredor` VARCHAR(255) NULL,
+    `Fecha Castigo` VARCHAR(100) NULL,
+    `Telefono` VARCHAR(500) NULL,
+    `Nombre_modulo Origen` VARCHAR(255) NULL,
+    `Estado de la Operación` VARCHAR(255) NULL,
+    `COSECHA` VARCHAR(100) NULL,
+    `raw_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `batch_id` BIGINT UNSIGNED NOT NULL,
+    `source_row` BIGINT UNSIGNED NOT NULL,
+    `source_file` VARCHAR(255) NOT NULL,
+    `row_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    `ingested_at` DATETIME NOT NULL,
+    PRIMARY KEY (`raw_id`),
+    KEY `idx_raw_cartera_confianza_batch_row` (`batch_id`, `source_row`),
+    KEY `idx_raw_cartera_confianza_row_hash` (`row_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
