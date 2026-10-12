@@ -10,6 +10,10 @@ return [
         'connection' => 'mysql_control',
         'table' => 'kpinvest_konnexia.cob_gestiones',
         'temporary_directory' => storage_path('app/private/reports'),
+        'schedule' => [
+            'enabled' => filter_var(env('GESTIONES_REPORT_SCHEDULE_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'time' => env('GESTIONES_REPORT_SCHEDULE_TIME', '07:00'),
+        ],
         'drive' => [
             'enabled' => filter_var(env('GESTIONES_REPORT_DRIVE_ENABLED', false), FILTER_VALIDATE_BOOL),
             'credentials_path' => env('GOOGLE_DRIVE_REPORT_CREDENTIALS_PATH', ''),
