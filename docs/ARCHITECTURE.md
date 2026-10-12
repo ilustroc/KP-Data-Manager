@@ -654,7 +654,7 @@ Estas decisiones no deben inventarse durante el desarrollo:
 8. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
 9. Privilegios definitivos del usuario de aplicación si las vistas se convierten a `SQL SECURITY INVOKER`.
 
-## 18. Carteras — fundación multientidad, BBVA v1, Caja Arequipa v1 y Compartamos v1
+## 18. Carteras — fundación multientidad, BBVA v1, Caja Arequipa v1, Compartamos v1 y Confianza v1
 
 La cartera no comparte una tabla Bronze universal. Cada entidad conserva su contrato físico y su evolución de versiones, mientras Silver expone un modelo común:
 
@@ -670,11 +670,12 @@ cartera_operaciones
    ├── cartera_direcciones
    ├── cartera_caja_arequipa_detalle (solo Caja Arequipa)
    ├── cartera_compartamos_detalle (solo Compartamos)
+   ├── cartera_confianza_detalle (solo Financiera Confianza)
    ├── cartera_avales (cuando la fuente los expone)
    └── cartera_garantias (cuando la fuente las expone)
 ```
 
-`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1`, `CARTERA / CAJA_AREQUIPA / 1` y `CARTERA / COMPARTAMOS / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
+`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1`, `CARTERA / CAJA_AREQUIPA / 1`, `CARTERA / COMPARTAMOS / 1` y `CARTERA / CONFIANZA / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
 
 ### 18.1 Contrato multientidad
 
@@ -683,10 +684,10 @@ cartera_operaciones
 | BBVA | `numdoc` | `CODCENTRAL` | `CONTRATO` |
 | Caja Arequipa | `NRO_DOC_TIT` | `CUENTA` | `OPERACION` |
 | Compartamos | `NumDoc` | `Ctacliente` | `Operación` |
-| Confianza | `DNI` | `Cuenta Cliente` | `Operación` |
+| Confianza | `DNI` | `Cuenta Cliente` | `Operacion` |
 | Wandoo | `DNI` | exactamente `"0" + DNI` | `Numero de Prestamo` |
 
-BBVA v1, Caja Arequipa v1 y Compartamos v1 están implementados. Las demás filas documentan contratos futuros y no habilitan loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
+BBVA v1, Caja Arequipa v1, Compartamos v1 y Confianza v1 están implementados. La fila de Wandoo documenta un contrato futuro y no habilita loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
 
 ### 18.2 Perfil BBVA v1
 
@@ -751,4 +752,12 @@ Compartamos exige exactamente 30 posiciones, con nombre y orden canónicos despu
 
 Los cinco importes se normalizan con `Decimal`; `TipCambio` usa `DECIMAL(18,6)` sin transformar cero en `NULL` ni ejecutar conversión de moneda. `FecCastigo` y `FecNacimiento` aceptan fechas explícitas, valores nativos y seriales Excel con el epoch del workbook. `FecDesembolso` admite un año aislado o una fecha completa: el año se valida en el rango `1900..2100` y se persiste siempre que esté disponible como `cartera_compartamos_detalle.anio_desembolso`; una fecha completa también se conserva en `cartera_operaciones.fecha_desembolso`, mientras un año aislado deja ese campo en `NULL`. Bronze conserva el valor fuente sin reinterpretar un año como serial Excel. Las direcciones generan bloques `CLIENTE` y `NEGOCIO` solo cuando contienen información.
 
-BBVA, Caja Arequipa y Compartamos comparten un normalizador telefónico que conserva exclusivamente celulares peruanos `9XXXXXXXX`. También acepta `51` seguido de un celular peruano y elimina ese prefijo; no admite otros códigos de país ni agrega uno. Los valores vacíos, los fijos, las longitudes distintas de nueve y los nueve dígitos repetitivos se descartan. Las coincidencias se deduplican únicamente dentro de la misma operación, después de normalizar y conservando la primera aparición. No existe deduplicación global.
+### 18.5 Perfil Financiera Confianza v1
+
+Confianza exige exactamente 27 posiciones, con nombre y orden canónicos después de eliminar whitespace exterior. `DNI`, `Cuenta Cliente` y `Operacion` se conservan como texto y alimentan respectivamente `documento_cliente`, `cuenta` y `operacion`, preservando ceros iniciales. `Calle y Numero` genera una dirección `CLIENTE` junto con `Ubigeo`, `Departamento_`, `Provincia` y `Distrito`; esos campos geográficos también se proyectan a la operación.
+
+`Saldo Capital MN` alimenta `cartera_operaciones.saldo_capital`, `Interés Compensatorio` alimenta `interes` e `Interés Moratorio` alimenta `mora`. No se suman MO y MN ni se ejecutan conversiones. Los dos capitales, los tres intereses, seguros, comisiones y gastos judiciales se preservan individualmente como `DECIMAL(15,2)` en `cartera_confianza_detalle`. Como la fuente no contiene `deuda_total` y no existe una fórmula aprobada para Confianza, ese campo común queda `NULL`. Del mismo modo, el código fuente `Moneda=0` no se interpreta: `cartera_operaciones.moneda` queda `NULL` y `moneda_origen` conserva el valor recibido.
+
+`Fecha Castigo` acepta `date`/`datetime`, texto `DD/MM/YYYY` o `YYYY-MM-DD` y seriales Excel convertidos con el epoch real del workbook. `Telefono` reutiliza el normalizador común y solo produce contacto cuando representa un celular peruano canónico. El detalle específico también conserva sucursal, corredor, módulo de origen y estado de la operación. Bronze conserva las 27 posiciones originales y una fila válida inserta Raw, operación, detalle, contacto y dirección en la misma transacción corta del chunk.
+
+BBVA, Caja Arequipa, Compartamos y Confianza comparten un normalizador telefónico que conserva exclusivamente celulares peruanos `9XXXXXXXX`. También acepta `51` seguido de un celular peruano y elimina ese prefijo; no admite otros códigos de país ni agrega uno. Los valores vacíos, los fijos, las longitudes distintas de nueve y los nueve dígitos repetitivos se descartan. Las coincidencias se deduplican únicamente dentro de la misma operación, después de normalizar y conservando la primera aparición. No existe deduplicación global.

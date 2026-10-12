@@ -12,10 +12,12 @@ from .domain.models import (
     BBVA_SOURCE_COLUMNS,
     CAJA_AREQUIPA_BRONZE_COLUMNS,
     COMPARTAMOS_BRONZE_COLUMNS,
+    CONFIANZA_BRONZE_COLUMNS,
     BatchRecord,
     BbvaPortfolioRecord,
     CajaArequipaPortfolioRecord,
     CompartamosPortfolioRecord,
+    ConfianzaPortfolioRecord,
     PaymentRecord,
     PortfolioRecord,
     ProcessingStats,
@@ -181,6 +183,19 @@ class MySqlDatabase:
                             COMPARTAMOS_BRONZE_COLUMNS,
                         )
                         self._insert_compartamos_children(cursor, narrowed_records, correlations)
+                    elif record_type is ConfianzaPortfolioRecord:
+                        narrowed_records = [
+                            record
+                            for record in records
+                            if isinstance(record, ConfianzaPortfolioRecord)
+                        ]
+                        correlations = self._insert_portfolio_records(
+                            cursor,
+                            narrowed_records,
+                            "raw_cartera_confianza",
+                            CONFIANZA_BRONZE_COLUMNS,
+                        )
+                        self._insert_confianza_children(cursor, narrowed_records, correlations)
                     else:
                         raise RuntimeError("Tipo de registro de cartera no soportado.")
                 if errors:
@@ -370,6 +385,51 @@ class MySqlDatabase:
                     detail.empresa,
                     detail.anio_desembolso,
                     detail.fecha_nacimiento,
+                    record.batch_id,
+                    raw_id,
+                    record.ingested_at,
+                )
+            )
+        cursor.executemany(detail_sql, details)
+
+    def _insert_confianza_children(
+        self,
+        cursor: DictCursor,
+        records: Sequence[ConfianzaPortfolioRecord],
+        correlations: dict[int, tuple[int, int]],
+    ) -> None:
+        detail_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_confianza_detalle`
+                (`operacion_id`, `documento_cliente`, `saldo_capital_mo`,
+                 `saldo_capital_mn`, `interes_vencido`, `interes_compensatorio`,
+                 `interes_moratorio`, `seguros`, `comisiones`, `gastos_judiciales`,
+                 `moneda_origen`, `codigo_sucursal_credito`, `nombre_sucursal_credito`,
+                 `corredor`, `nombre_modulo_origen`, `estado_operacion`, `batch_id`,
+                 `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 19)})
+        """
+        details = []
+        for record in records:
+            raw_id, operation_id = correlations[record.source_row]
+            detail = record.detail
+            details.append(
+                (
+                    operation_id,
+                    record.operation.documento_cliente,
+                    detail.saldo_capital_mo,
+                    detail.saldo_capital_mn,
+                    detail.interes_vencido,
+                    detail.interes_compensatorio,
+                    detail.interes_moratorio,
+                    detail.seguros,
+                    detail.comisiones,
+                    detail.gastos_judiciales,
+                    detail.moneda_origen,
+                    detail.codigo_sucursal_credito,
+                    detail.nombre_sucursal_credito,
+                    detail.corredor,
+                    detail.nombre_modulo_origen,
+                    detail.estado_operacion,
                     record.batch_id,
                     raw_id,
                     record.ingested_at,

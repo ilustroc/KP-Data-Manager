@@ -54,6 +54,13 @@ abstract class ImportFeatureTestCase extends TestCase
                     'cartera_operaciones',
                     'raw_cartera_compartamos',
                 ],
+                'CONFIANZA' => [
+                    'cartera_confianza_detalle',
+                    'cartera_contactos',
+                    'cartera_direcciones',
+                    'cartera_operaciones',
+                    'raw_cartera_confianza',
+                ],
             ],
         ]);
 
@@ -135,10 +142,12 @@ abstract class ImportFeatureTestCase extends TestCase
     {
         foreach ([
             'import_deletion_log',
+            'raw_cartera_confianza',
             'raw_cartera_compartamos',
             'raw_cartera_caja_arequipa',
             'raw_cartera_bbva',
             'cartera_compartamos_detalle',
+            'cartera_confianza_detalle',
             'cartera_garantias',
             'cartera_avales',
             'cartera_caja_arequipa_detalle',
@@ -215,9 +224,11 @@ abstract class ImportFeatureTestCase extends TestCase
             'cartera_avales',
             'cartera_garantias',
             'cartera_compartamos_detalle',
+            'cartera_confianza_detalle',
             'raw_cartera_bbva',
             'raw_cartera_caja_arequipa',
             'raw_cartera_compartamos',
+            'raw_cartera_confianza',
         ] as $tableName) {
             Schema::connection('sqlite')->create($tableName, function (Blueprint $table): void {
                 $table->id();
