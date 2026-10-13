@@ -5,6 +5,7 @@ from .carteras.bbva import BbvaV1Profile
 from .carteras.caja_arequipa import CajaArequipaV1Profile
 from .carteras.compartamos import CompartamosV1Profile
 from .carteras.confianza import ConfianzaV1Profile
+from .carteras.wandoo import WandooV1Profile
 
 
 class ProfileRegistry:
@@ -14,6 +15,7 @@ class ProfileRegistry:
             CajaArequipaV1Profile(),
             CompartamosV1Profile(),
             ConfianzaV1Profile(),
+            WandooV1Profile(),
         )
         self._profiles = {
             (profile.entity, profile.version): profile for profile in configured

@@ -66,9 +66,21 @@ def test_registry_routes_confianza_v1_portfolio(settings):
     assert loader.profile.version == "1"
 
 
-def test_registry_rejects_portfolio_without_supported_profile(settings):
+def test_registry_routes_wandoo_v1_portfolio(settings):
     database = FakeCarteraDatabase(
         make_batch(tipo="CARTERA", entidad="WANDOO", perfil_version="1")
+    )
+
+    loader = LoaderRegistry().resolve(database.batch, database, settings)
+
+    assert isinstance(loader, CarteraLoader)
+    assert loader.profile.entity == "WANDOO"
+    assert loader.profile.version == "1"
+
+
+def test_registry_rejects_portfolio_without_supported_profile(settings):
+    database = FakeCarteraDatabase(
+        make_batch(tipo="CARTERA", entidad="NO_EXISTE", perfil_version="1")
     )
 
     with pytest.raises(StructuralFileError, match="perfil soportado"):

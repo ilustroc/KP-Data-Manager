@@ -53,7 +53,7 @@
                                     </option>
                                 @endforeach
                             </select>
-                            <span class="mt-1 block text-[11px] font-normal normal-case tracking-normal text-muted">Disponibles: BBVA, Caja Arequipa, Compartamos y Financiera Confianza.</span>
+                            <span class="mt-1 block text-[11px] font-normal normal-case tracking-normal text-muted">Disponibles: BBVA, Caja Arequipa, Compartamos, Financiera Confianza y Wandoo.</span>
                         </label>
 
                         <fieldset>

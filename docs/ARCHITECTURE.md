@@ -654,7 +654,7 @@ Estas decisiones no deben inventarse durante el desarrollo:
 8. Mecanismo operativo disponible (`systemd` o Supervisor) y usuario/grupo de servicio.
 9. Privilegios definitivos del usuario de aplicación si las vistas se convierten a `SQL SECURITY INVOKER`.
 
-## 18. Carteras — fundación multientidad, BBVA v1, Caja Arequipa v1, Compartamos v1 y Confianza v1
+## 18. Carteras — fundación multientidad, BBVA v1, Caja Arequipa v1, Compartamos v1, Confianza v1 y Wandoo v1
 
 La cartera no comparte una tabla Bronze universal. Cada entidad conserva su contrato físico y su evolución de versiones, mientras Silver expone un modelo común:
 
@@ -671,11 +671,12 @@ cartera_operaciones
    ├── cartera_caja_arequipa_detalle (solo Caja Arequipa)
    ├── cartera_compartamos_detalle (solo Compartamos)
    ├── cartera_confianza_detalle (solo Financiera Confianza)
+   ├── cartera_wandoo_detalle (solo Wandoo)
    ├── cartera_avales (cuando la fuente los expone)
    └── cartera_garantias (cuando la fuente las expone)
 ```
 
-`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1`, `CARTERA / CAJA_AREQUIPA / 1`, `CARTERA / COMPARTAMOS / 1` y `CARTERA / CONFIANZA / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
+`import_batch` incorpora `entidad` y `perfil_version` como dimensiones separadas de `tipo`. Las combinaciones implementadas son `CARTERA / BBVA / 1`, `CARTERA / CAJA_AREQUIPA / 1`, `CARTERA / COMPARTAMOS / 1`, `CARTERA / CONFIANZA / 1` y `CARTERA / WANDOO / 1`. Una futura modificación de formato crea una versión nueva sin reinterpretar archivos históricos.
 
 ### 18.1 Contrato multientidad
 
@@ -687,7 +688,7 @@ cartera_operaciones
 | Confianza | `DNI` | `Cuenta Cliente` | `Operacion` |
 | Wandoo | `DNI` | exactamente `"0" + DNI` | `Numero de Prestamo` |
 
-BBVA v1, Caja Arequipa v1, Compartamos v1 y Confianza v1 están implementados. La fila de Wandoo documenta un contrato futuro y no habilita loaders ni cargas. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada.
+BBVA v1, Caja Arequipa v1, Compartamos v1, Confianza v1 y Wandoo v1 están implementados. Para Wandoo no se usa `LPAD`: incluso un DNI que ya empieza con cero recibe exactamente un cero adicional al inicio de la cuenta derivada. Esta cuenta técnica satisface el contrato `NOT NULL` del modelo común sin duplicar `Numero de Prestamo`, que permanece únicamente como `operacion`.
 
 ### 18.2 Perfil BBVA v1
 
@@ -756,8 +757,16 @@ Los cinco importes se normalizan con `Decimal`; `TipCambio` usa `DECIMAL(18,6)` 
 
 Confianza exige exactamente 27 posiciones, con nombre y orden canónicos después de eliminar whitespace exterior. `DNI`, `Cuenta Cliente` y `Operacion` se conservan como texto y alimentan respectivamente `documento_cliente`, `cuenta` y `operacion`, preservando ceros iniciales. `Calle y Numero` genera una dirección `CLIENTE` junto con `Ubigeo`, `Departamento_`, `Provincia` y `Distrito`; esos campos geográficos también se proyectan a la operación.
 
-`Saldo Capital MN` alimenta `cartera_operaciones.saldo_capital`, `Interés Compensatorio` alimenta `interes` e `Interés Moratorio` alimenta `mora`. No se suman MO y MN ni se ejecutan conversiones. Los dos capitales, los tres intereses, seguros, comisiones y gastos judiciales se preservan individualmente como `DECIMAL(15,2)` en `cartera_confianza_detalle`. Como la fuente no contiene `deuda_total` y no existe una fórmula aprobada para Confianza, ese campo común queda `NULL`. Del mismo modo, el código fuente `Moneda=0` no se interpreta: `cartera_operaciones.moneda` queda `NULL` y `moneda_origen` conserva el valor recibido.
+La moneda origen `0` se proyecta como `PEN` y `101` como `USD`; cualquier otro código queda sin moneda canónica y siempre se conserva en `moneda_origen`. PEN selecciona `Saldo Capital MN` y USD selecciona `Saldo Capital MO`, sin sumar ambos ni ejecutar conversiones. `deuda_total` suma exclusivamente ese capital canónico, interés vencido, interés compensatorio, interés moratorio, seguros, comisiones y gastos judiciales con aritmética decimal. `Interés Compensatorio` alimenta `interes` e `Interés Moratorio` alimenta `mora`; todos los componentes se preservan individualmente como `DECIMAL(15,2)` en `cartera_confianza_detalle`.
 
 `Fecha Castigo` acepta `date`/`datetime`, texto `DD/MM/YYYY` o `YYYY-MM-DD` y seriales Excel convertidos con el epoch real del workbook. `Telefono` reutiliza el normalizador común y solo produce contacto cuando representa un celular peruano canónico. El detalle específico también conserva sucursal, corredor, módulo de origen y estado de la operación. Bronze conserva las 27 posiciones originales y una fila válida inserta Raw, operación, detalle, contacto y dirección en la misma transacción corta del chunk.
 
 BBVA, Caja Arequipa, Compartamos y Confianza comparten un normalizador telefónico que conserva exclusivamente celulares peruanos `9XXXXXXXX`. También acepta `51` seguido de un celular peruano y elimina ese prefijo; no admite otros códigos de país ni agrega uno. Los valores vacíos, los fijos, las longitudes distintas de nueve y los nueve dígitos repetitivos se descartan. Las coincidencias se deduplican únicamente dentro de la misma operación, después de normalizar y conservando la primera aparición. No existe deduplicación global.
+
+### 18.6 Perfil Wandoo v1
+
+Wandoo exige exactamente 19 posiciones y conserva los headers originales, con tildes y espacios, como contrato de entrada. Las columnas físicas de `raw_cartera_wandoo` usan exclusivamente ASCII `snake_case`. `DNI` alimenta `documento_cliente`, `Numero de Prestamo` alimenta `operacion`, y `cuenta` se deriva anteponiendo exactamente un `0` al DNI por la restricción `NOT NULL` del modelo Silver común. Los identificadores se mantienen como texto y los guiones del préstamo no se eliminan.
+
+`Saldo deudor` alimenta tanto `saldo_capital` como `deuda_total` con el mismo valor normalizado, sin sumarlo consigo mismo ni aplicar otra fórmula; `interes`, `mora` y `moneda` quedan `NULL`. `Días de mora` alimenta `dias_atraso` y se conserva también en el detalle, sin tratarse como importe. `Total soles pagados` no se usa para inferir moneda. Los importes se normalizan con `Decimal`, y los valores no vacíos no numéricos producen errores controlados de fila.
+
+`Fecha Últ. Pago` y `Fecha otorgamiento crédito` aceptan `date`/`datetime`, texto `DD/MM/YYYY` o `YYYY-MM-DD` y seriales Excel convertidos con el epoch real del workbook. La fecha de otorgamiento también alimenta `fecha_desembolso`. Departamento, provincia y distrito se recortan sin correcciones inferidas y generan una dirección `CLIENTE` con calle `NULL`; el esquema común admite esta representación. `Producto crediticio` alimenta `producto` y se conserva en `cartera_wandoo_detalle` junto con los demás atributos específicos. La fuente no contiene teléfonos y no genera filas en `cartera_contactos`.

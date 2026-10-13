@@ -15,12 +15,15 @@ from src.domain.models import (
     COMPARTAMOS_SOURCE_COLUMNS,
     CONFIANZA_BRONZE_COLUMNS,
     CONFIANZA_SOURCE_COLUMNS,
+    WANDOO_BRONZE_COLUMNS,
+    WANDOO_SOURCE_COLUMNS,
     CellValue,
     SourceRow,
 )
 from src.profiles.carteras.caja_arequipa import CajaArequipaV1Profile
 from src.profiles.carteras.compartamos import CompartamosV1Profile
 from src.profiles.carteras.confianza import ConfianzaV1Profile
+from src.profiles.carteras.wandoo import WandooV1Profile
 
 
 class RecordingCursor:
@@ -49,6 +52,7 @@ class RecordingCursor:
             "raw_cartera_caja_arequipa" in self.last_sql
             or "raw_cartera_compartamos" in self.last_sql
             or "raw_cartera_confianza" in self.last_sql
+            or "raw_cartera_wandoo" in self.last_sql
         ):
             return [{"raw_id": 77, "source_row": 2}]
         if "cartera_operaciones" in self.last_sql:
@@ -149,6 +153,33 @@ def confianza_record():
         batch_id=66,
         source_file="confianza.xlsx",
         ingested_at=datetime(2026, 10, 12, 15, 0, 0),
+        error_value_max_length=100,
+    )
+    assert errors == [] and record is not None
+    return record
+
+
+def wandoo_record():
+    values = {column: CellValue(None) for column in WANDOO_SOURCE_COLUMNS}
+    values.update(
+        {
+            "DNI": CellValue("00003862"),
+            "Numero de Prestamo": CellValue("7277-1292-001"),
+            "Saldo deudor": CellValue("337.55"),
+            "Departamento": CellValue("Loreto"),
+            "Provincia": CellValue("Maynas"),
+            "Distrito": CellValue("Iquitos"),
+            "Días de mora": CellValue("18"),
+            "Producto crediticio": CellValue("Micropréstamo"),
+            "Estado Cobranza Actual": CellValue("Prejudicial externa"),
+            "Cosecha": CellValue("WANDOO_1"),
+        }
+    )
+    record, errors = WandooV1Profile().normalize(
+        SourceRow(2, values),
+        batch_id=77,
+        source_file="wandoo.xlsx",
+        ingested_at=datetime(2026, 10, 13, 15, 0, 0),
         error_value_max_length=100,
     )
     assert errors == [] and record is not None
@@ -416,6 +447,104 @@ def test_confianza_ddl_preserves_exact_source_order_metadata_and_detail_types():
         "corredor",
         "nombre_modulo_origen",
         "estado_operacion",
+        "batch_id",
+        "source_raw_id",
+        "created_at",
+    ]
+    assert "FOREIGN KEY" not in bronze_ddl.upper()
+    assert "FOREIGN KEY" not in detail_ddl.upper()
+
+
+def test_wandoo_chunk_persists_bronze_common_address_and_detail_in_one_transaction(settings):
+    connection = RecordingConnection()
+    database = database_with_connection(settings, connection)
+
+    database.insert_cartera_chunk([wandoo_record()], [])
+
+    statements = {sql: rows for sql, rows in connection.recording_cursor.executed_many}
+    sql_text = "\n".join(statements)
+    assert connection.began and connection.committed and not connection.rolled_back
+    assert "raw_cartera_wandoo" in sql_text
+    assert "cartera_operaciones" in sql_text
+    assert "cartera_direcciones" in sql_text
+    assert "cartera_wandoo_detalle" in sql_text
+    assert "cartera_contactos" not in sql_text
+    raw_rows = next(rows for sql, rows in statements.items() if "raw_cartera_wandoo" in sql)
+    operation_rows = next(rows for sql, rows in statements.items() if "cartera_operaciones" in sql)
+    detail_rows = next(rows for sql, rows in statements.items() if "cartera_wandoo_detalle" in sql)
+    assert len(raw_rows[0]) == 24
+    assert operation_rows[0][2] == "00003862"
+    assert operation_rows[0][4] == "000003862"
+    assert operation_rows[0][5] == "7277-1292-001"
+    assert operation_rows[0][8] is None
+    assert operation_rows[0][9] == Decimal("337.55")
+    assert operation_rows[0][10] == Decimal("337.55")
+    assert operation_rows[0][12] is None
+    assert operation_rows[0][16] == 18
+    assert detail_rows[0][1] == "00003862"
+    assert detail_rows[0][4] == Decimal("337.55")
+    assert operation_rows[0][9] == operation_rows[0][10] == detail_rows[0][4]
+    assert detail_rows[0][8] == 18
+
+
+def test_wandoo_chunk_rolls_back_when_detail_insert_fails(settings):
+    connection = RecordingConnection(fail_table="cartera_wandoo_detalle")
+    database = database_with_connection(settings, connection)
+
+    with pytest.raises(RuntimeError, match="simulated database failure"):
+        database.insert_cartera_chunk([wandoo_record()], [])
+
+    assert connection.began
+    assert connection.rolled_back
+    assert not connection.committed
+
+
+def test_wandoo_ddl_preserves_exact_source_order_metadata_and_detail_types():
+    root = Path(__file__).parents[2]
+    bronze_ddl = (root / "database/sql/022_create_raw_cartera_wandoo.sql").read_text(
+        encoding="utf-8"
+    )
+    detail_ddl = (
+        root / "database/sql/023_create_cartera_wandoo_detalle.sql"
+    ).read_text(encoding="utf-8")
+    declared_columns = re.findall(r"^\s+`([^`]+)`\s+", bronze_ddl, flags=re.MULTILINE)
+    detail_columns = re.findall(r"^\s+`([^`]+)`\s+", detail_ddl, flags=re.MULTILINE)
+
+    assert declared_columns[:19] == list(WANDOO_BRONZE_COLUMNS)
+    assert len(WANDOO_SOURCE_COLUMNS) == 19
+    assert len(WANDOO_BRONZE_COLUMNS) == 19
+    assert declared_columns[19:] == [
+        "raw_id",
+        "batch_id",
+        "source_row",
+        "source_file",
+        "row_hash",
+        "ingested_at",
+    ]
+    assert all(column.isascii() for column in declared_columns)
+    assert all(re.fullmatch(r"[a-z][a-z0-9_]*", column) for column in declared_columns)
+    assert not re.search(r"^\s*UNIQUE\s", bronze_ddl, flags=re.MULTILINE | re.IGNORECASE)
+    assert "`saldo_deudor` DECIMAL(15,2) NULL" in detail_ddl
+    assert "`total_soles_pagados` DECIMAL(15,2) NULL" in detail_ddl
+    assert "`fecha_ultimo_pago` DATE NULL" in detail_ddl
+    assert "`fecha_otorgamiento_credito` DATE NULL" in detail_ddl
+    assert detail_columns == [
+        "id",
+        "operacion_id",
+        "documento_cliente",
+        "recuento_prestamos_pagados",
+        "nacionalidad",
+        "saldo_deudor",
+        "fecha_ultimo_pago",
+        "total_soles_pagados",
+        "edad",
+        "dias_mora",
+        "producto_crediticio",
+        "fuente_ingreso",
+        "estado_cobranza_actual",
+        "contactabilidad_interna",
+        "fecha_otorgamiento_credito",
+        "actividad_laboral",
         "batch_id",
         "source_raw_id",
         "created_at",

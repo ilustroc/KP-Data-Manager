@@ -69,6 +69,12 @@ return [
                 'kp_silver.cartera_operaciones',
                 'kp_bronze.raw_cartera_confianza',
             ],
+            'WANDOO' => [
+                'kp_silver.cartera_wandoo_detalle',
+                'kp_silver.cartera_direcciones',
+                'kp_silver.cartera_operaciones',
+                'kp_bronze.raw_cartera_wandoo',
+            ],
         ],
     ],
 ];
