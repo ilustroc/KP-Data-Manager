@@ -28,7 +28,8 @@ class PortfolioImportControllerTest extends ImportFeatureTestCase
             ->assertDontSeeText('Compartamos · Próximamente')
             ->assertSeeText('Financiera Confianza')
             ->assertDontSeeText('Financiera Confianza · Próximamente')
-            ->assertSeeText('Wandoo · Próximamente');
+            ->assertSeeText('Wandoo')
+            ->assertDontSeeText('Wandoo · Próximamente');
     }
 
     public function test_portfolio_requires_financial_entity(): void
@@ -66,22 +67,29 @@ class PortfolioImportControllerTest extends ImportFeatureTestCase
         $this->assertDatabaseCount('import_batch', 0);
     }
 
-    public function test_entity_without_profile_cannot_be_registered(): void
+    public function test_valid_wandoo_portfolio_is_registered_with_profile_and_dispatched(): void
     {
+        Queue::fake([ProcessImportBatch::class]);
         Storage::fake('imports');
         $user = User::factory()->operator()->create();
 
-        $this->actingAs($user)
-            ->from(route('imports.create'))
-            ->post(route('imports.store'), [
-                'tipo' => ImportType::Portfolio->value,
-                'entidad' => FinancialEntity::Wandoo->value,
-                'origen' => ImportOrigin::Historical->value,
-                'archivo' => $this->validCsv('wandoo.csv'),
-            ])
-            ->assertInvalid(['entidad' => 'La entidad seleccionada aún no está disponible para procesamiento.']);
+        $response = $this->actingAs($user)->post(route('imports.store'), [
+            'tipo' => ImportType::Portfolio->value,
+            'entidad' => FinancialEntity::Wandoo->value,
+            'origen' => ImportOrigin::Historical->value,
+            'archivo' => $this->validCsv('WANDOO_OCTUBRE.csv'),
+        ]);
 
-        $this->assertDatabaseCount('import_batch', 0);
+        $batch = DB::connection('sqlite')->table('import_batch')->firstOrFail();
+        $response->assertRedirectToRoute('imports.show', $batch->batch_id);
+        $this->assertSame(ImportType::Portfolio->value, $batch->tipo);
+        $this->assertSame(FinancialEntity::Wandoo->value, $batch->entidad);
+        $this->assertSame('1', $batch->perfil_version);
+        $this->assertSame(ImportStatus::Pending->value, $batch->estado);
+        Queue::assertPushed(
+            ProcessImportBatch::class,
+            fn (ProcessImportBatch $job): bool => $job->batchId === (int) $batch->batch_id,
+        );
     }
 
     public function test_valid_bbva_portfolio_is_registered_with_profile_and_dispatched(): void
@@ -261,5 +269,24 @@ class PortfolioImportControllerTest extends ImportFeatureTestCase
         $this->actingAs($user)
             ->get(route('imports.show', $batchId))
             ->assertSeeText('Financiera Confianza');
+    }
+
+    public function test_history_and_detail_show_wandoo_friendly_label(): void
+    {
+        $user = User::factory()->readOnly()->create();
+        $batchId = $this->createBatch([
+            'tipo' => ImportType::Portfolio->value,
+            'entidad' => FinancialEntity::Wandoo->value,
+            'perfil_version' => '1',
+            'archivo_original' => 'WANDOO_OCTUBRE.xlsx',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('imports.index'))
+            ->assertSeeText('Cartera / Wandoo');
+
+        $this->actingAs($user)
+            ->get(route('imports.show', $batchId))
+            ->assertSeeText('Wandoo');
     }
 }

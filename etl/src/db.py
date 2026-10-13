@@ -13,6 +13,7 @@ from .domain.models import (
     CAJA_AREQUIPA_BRONZE_COLUMNS,
     COMPARTAMOS_BRONZE_COLUMNS,
     CONFIANZA_BRONZE_COLUMNS,
+    WANDOO_BRONZE_COLUMNS,
     BatchRecord,
     BbvaPortfolioRecord,
     CajaArequipaPortfolioRecord,
@@ -22,6 +23,7 @@ from .domain.models import (
     PortfolioRecord,
     ProcessingStats,
     RowError,
+    WandooPortfolioRecord,
 )
 
 
@@ -196,6 +198,17 @@ class MySqlDatabase:
                             CONFIANZA_BRONZE_COLUMNS,
                         )
                         self._insert_confianza_children(cursor, narrowed_records, correlations)
+                    elif record_type is WandooPortfolioRecord:
+                        narrowed_records = [
+                            record for record in records if isinstance(record, WandooPortfolioRecord)
+                        ]
+                        correlations = self._insert_portfolio_records(
+                            cursor,
+                            narrowed_records,
+                            "raw_cartera_wandoo",
+                            WANDOO_BRONZE_COLUMNS,
+                        )
+                        self._insert_wandoo_children(cursor, narrowed_records, correlations)
                     else:
                         raise RuntimeError("Tipo de registro de cartera no soportado.")
                 if errors:
@@ -430,6 +443,50 @@ class MySqlDatabase:
                     detail.corredor,
                     detail.nombre_modulo_origen,
                     detail.estado_operacion,
+                    record.batch_id,
+                    raw_id,
+                    record.ingested_at,
+                )
+            )
+        cursor.executemany(detail_sql, details)
+
+    def _insert_wandoo_children(
+        self,
+        cursor: DictCursor,
+        records: Sequence[WandooPortfolioRecord],
+        correlations: dict[int, tuple[int, int]],
+    ) -> None:
+        detail_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`cartera_wandoo_detalle`
+                (`operacion_id`, `documento_cliente`, `recuento_prestamos_pagados`,
+                 `nacionalidad`, `saldo_deudor`, `fecha_ultimo_pago`,
+                 `total_soles_pagados`, `edad`, `dias_mora`, `producto_crediticio`,
+                 `fuente_ingreso`, `estado_cobranza_actual`, `contactabilidad_interna`,
+                 `fecha_otorgamiento_credito`, `actividad_laboral`, `batch_id`,
+                 `source_raw_id`, `created_at`)
+            VALUES ({", ".join(["%s"] * 18)})
+        """
+        details = []
+        for record in records:
+            raw_id, operation_id = correlations[record.source_row]
+            detail = record.detail
+            details.append(
+                (
+                    operation_id,
+                    record.operation.documento_cliente,
+                    detail.recuento_prestamos_pagados,
+                    detail.nacionalidad,
+                    detail.saldo_deudor,
+                    detail.fecha_ultimo_pago,
+                    detail.total_soles_pagados,
+                    detail.edad,
+                    detail.dias_mora,
+                    detail.producto_crediticio,
+                    detail.fuente_ingreso,
+                    detail.estado_cobranza_actual,
+                    detail.contactabilidad_interna,
+                    detail.fecha_otorgamiento_credito,
+                    detail.actividad_laboral,
                     record.batch_id,
                     raw_id,
                     record.ingested_at,

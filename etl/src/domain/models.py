@@ -328,6 +328,51 @@ CONFIANZA_BRONZE_COLUMNS = (
 )
 
 
+WANDOO_SOURCE_COLUMNS = (
+    "DNI",
+    "Numero de Prestamo",
+    "Recuento de préstamos ya pagados",
+    "Nacionalidad",
+    "Saldo deudor",
+    "Fecha Últ. Pago",
+    "Total soles pagados",
+    "Departamento",
+    "Provincia",
+    "Distrito",
+    "Edad",
+    "Días de mora",
+    "Producto crediticio",
+    "Fuente de Ingreso",
+    "Estado Cobranza Actual",
+    "Contactabilidad (Interna)",
+    "Fecha otorgamiento crédito",
+    "Actividad Laboral",
+    "Cosecha",
+)
+
+WANDOO_BRONZE_COLUMNS = (
+    "dni",
+    "numero_prestamo",
+    "recuento_prestamos_pagados",
+    "nacionalidad",
+    "saldo_deudor",
+    "fecha_ultimo_pago",
+    "total_soles_pagados",
+    "departamento",
+    "provincia",
+    "distrito",
+    "edad",
+    "dias_mora",
+    "producto_crediticio",
+    "fuente_ingreso",
+    "estado_cobranza_actual",
+    "contactabilidad_interna",
+    "fecha_otorgamiento_credito",
+    "actividad_laboral",
+    "cosecha",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class CajaArequipaDetail:
     analista: str | None
@@ -471,11 +516,53 @@ class ConfianzaPortfolioRecord:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class WandooDetail:
+    recuento_prestamos_pagados: int | None
+    nacionalidad: str | None
+    saldo_deudor: Decimal | None
+    fecha_ultimo_pago: date | None
+    total_soles_pagados: Decimal | None
+    edad: int | None
+    dias_mora: int | None
+    producto_crediticio: str | None
+    fuente_ingreso: str | None
+    estado_cobranza_actual: str | None
+    contactabilidad_interna: str | None
+    fecha_otorgamiento_credito: date | None
+    actividad_laboral: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class WandooPortfolioRecord:
+    source_values: tuple[str | None, ...]
+    source_row: int
+    source_file: str
+    batch_id: int
+    row_hash: str
+    ingested_at: datetime
+    operation: PortfolioOperation
+    detail: WandooDetail
+    contacts: tuple[PortfolioContact, ...]
+    addresses: tuple[PortfolioAddress, ...]
+
+    def raw_insert_tuple(self) -> tuple[Any, ...]:
+        return (
+            *self.source_values,
+            self.batch_id,
+            self.source_row,
+            self.source_file,
+            self.row_hash,
+            self.ingested_at,
+        )
+
+
 PortfolioRecord = (
     BbvaPortfolioRecord
     | CajaArequipaPortfolioRecord
     | CompartamosPortfolioRecord
     | ConfianzaPortfolioRecord
+    | WandooPortfolioRecord
 )
 
 
