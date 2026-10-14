@@ -39,8 +39,13 @@ class ImportController extends Controller
 
     public function create(): View
     {
+        $registrationTypes = config('imports.registration_types', []);
+
         return view('imports.create', [
-            'types' => ImportType::cases(),
+            'types' => array_values(array_filter(
+                ImportType::cases(),
+                static fn (ImportType $type): bool => in_array($type->value, $registrationTypes, true),
+            )),
             'entities' => FinancialEntity::cases(),
             'origins' => ImportOrigin::cases(),
             'maximumUploadMegabytes' => (int) config('imports.max_web_upload_mb'),

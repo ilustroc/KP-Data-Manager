@@ -8,6 +8,8 @@ use App\ImportType;
 use App\Jobs\ProcessImportBatch;
 use App\Models\User;
 use App\Services\Imports\ImportFileService;
+use App\Services\Imports\ImportUploadService;
+use App\Services\Imports\InvalidImportFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -15,6 +17,24 @@ use RuntimeException;
 
 class ImportUploadServiceTest extends ImportFeatureTestCase
 {
+    public function test_search_registration_requires_future_preview_and_mapping_flow(): void
+    {
+        $user = User::factory()->operator()->create();
+
+        try {
+            app(ImportUploadService::class)->registerWeb(
+                file: $this->validCsv(),
+                type: ImportType::Search,
+                origin: ImportOrigin::Manual,
+                user: $user,
+            );
+            $this->fail('La carga SEARCH directa debió ser rechazada.');
+        } catch (InvalidImportFile $exception) {
+            $this->assertStringContainsString('preview, mapping y confirmación', $exception->getMessage());
+            $this->assertDatabaseCount('import_batch', 0);
+        }
+    }
+
     public function test_filesystem_failure_marks_created_batch_as_error(): void
     {
         Queue::fake([ProcessImportBatch::class]);

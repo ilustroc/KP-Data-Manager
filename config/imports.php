@@ -14,6 +14,7 @@ return [
     'inbox_path' => env('IMPORT_INBOX_PATH') ?: storage_path('app/private/import-inbox'),
     'max_web_upload_mb' => (int) env('IMPORT_MAX_WEB_UPLOAD_MB', 50),
     'allowed_extensions' => $allowedExtensions,
+    'registration_types' => ['PAGOS', 'CARTERA'],
 
     'allowed_mime_types' => [
         'csv' => [
@@ -35,6 +36,22 @@ return [
         'default' => 25,
         'allowed' => [25, 50, 100],
         'errors' => 50,
+    ],
+
+    'search' => [
+        'type' => 'SEARCH',
+        'registration_enabled' => false,
+        'control_connection' => 'mysql_control',
+        'bronze_connection' => 'mysql_bronze',
+        'scope_insert_chunk_size' => 1000,
+        'tables' => [
+            'datasets' => 'import_dataset',
+            'sources' => 'import_source',
+            'dataset_sources' => 'import_dataset_source',
+            'column_mappings' => 'import_column_mapping',
+            'scope_documents' => 'import_scope_document',
+            'raw_rows' => 'search_raw_row',
+        ],
     ],
 
     'deletion' => [
