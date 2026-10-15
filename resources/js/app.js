@@ -68,6 +68,40 @@ const updateFinancialEntityVisibility = () => {
 importType?.addEventListener('change', updateFinancialEntityVisibility);
 updateFinancialEntityVisibility();
 
+const searchImportForm = document.querySelector('[data-search-import-form]');
+const searchDataset = document.querySelector('[data-search-dataset]');
+const searchSource = document.querySelector('[data-search-source]');
+const searchSourceNotice = document.querySelector('[data-search-source-notice]');
+
+const updateSearchSources = () => {
+    if (! (searchImportForm instanceof HTMLFormElement)
+        || ! (searchDataset instanceof HTMLSelectElement)
+        || ! (searchSource instanceof HTMLSelectElement)
+        || ! (searchSourceNotice instanceof HTMLElement)) {
+        return;
+    }
+
+    const selectedDataset = searchDataset.value;
+    let availableSources = 0;
+    searchSource.querySelectorAll('option[data-dataset]').forEach((option) => {
+        const isAvailable = option.dataset.dataset === selectedDataset;
+        option.hidden = ! isAvailable;
+        option.disabled = ! isAvailable;
+        availableSources += Number(isAvailable);
+    });
+
+    const selectedOption = searchSource.selectedOptions.item(0);
+    if (! selectedOption?.dataset.dataset || selectedOption.dataset.dataset !== selectedDataset) {
+        searchSource.value = '';
+    }
+
+    searchSource.disabled = availableSources === 0;
+    searchSourceNotice.classList.toggle('hidden', availableSources > 0);
+};
+
+searchDataset?.addEventListener('change', updateSearchSources);
+updateSearchSources();
+
 const importDeletionDialog = document.querySelector('[data-import-deletion-dialog]');
 const importDeletionOpen = document.querySelector('[data-import-deletion-open]');
 const importDeletionConfirmation = document.querySelector('[data-import-deletion-confirmation]');

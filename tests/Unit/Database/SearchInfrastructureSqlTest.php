@@ -110,6 +110,61 @@ class SearchInfrastructureSqlTest extends TestCase
         }
     }
 
+    public function test_personas_silver_is_historical_by_batch_with_duplicate_barrier(): void
+    {
+        $sql = $this->sql('028_create_search_personas.sql');
+
+        $this->assertStringContainsString('CREATE TABLE `kp_silver`.`search_personas`', $sql);
+        $this->assertStringContainsString('`documento` VARCHAR(20)', $sql);
+        $this->assertStringContainsString(
+            'UNIQUE KEY `uq_search_personas_batch_documento` (`batch_id`, `documento`)',
+            $sql,
+        );
+        $this->assertStringContainsString('ENGINE=InnoDB', $sql);
+        $this->assertStringNotContainsString('is_current', $sql);
+        $this->assertStringNotContainsString('valid_from', $sql);
+        $this->assertStringNotContainsString('valid_to', $sql);
+    }
+
+    public function test_personas_gold_has_one_row_per_document_and_mysql_57_compatible_ddl(): void
+    {
+        $sql = $this->sql('029_create_search_person_index.sql');
+
+        $this->assertStringContainsString('CREATE TABLE `kp_gold`.`search_person_index`', $sql);
+        $this->assertStringContainsString('PRIMARY KEY (`documento`)', $sql);
+        $this->assertStringContainsString('`tipo_documento` VARCHAR(20)', $sql);
+        $this->assertStringContainsString('ENGINE=InnoDB', $sql);
+        foreach (['JSON_TABLE', 'WITH RECURSIVE', 'ROW_NUMBER('] as $unsupported) {
+            $this->assertStringNotContainsString($unsupported, strtoupper($sql));
+        }
+    }
+
+    public function test_telefonos_silver_is_historical_with_the_approved_duplicate_barrier(): void
+    {
+        $sql = $this->sql('030_create_search_telefonos.sql');
+
+        $this->assertStringContainsString('CREATE TABLE `kp_silver`.`search_telefonos`', $sql);
+        $this->assertStringContainsString('`telefono` CHAR(9)', $sql);
+        $this->assertStringContainsString(
+            'UNIQUE KEY `uq_search_telefonos_batch_document_phone`',
+            $sql,
+        );
+        $this->assertStringContainsString('ENGINE=InnoDB', $sql);
+        $this->assertStringNotContainsString('is_current', $sql);
+        $this->assertDoesNotMatchRegularExpression('/\b(DROP|TRUNCATE)\b/i', $sql);
+    }
+
+    public function test_telefonos_gold_has_the_current_document_phone_contract(): void
+    {
+        $sql = $this->sql('031_create_search_telefonos_gold.sql');
+
+        $this->assertStringContainsString('CREATE TABLE `kp_gold`.`search_telefonos`', $sql);
+        $this->assertStringContainsString('PRIMARY KEY (`documento`, `telefono`)', $sql);
+        $this->assertStringContainsString('KEY `idx_search_telefonos_document_date` (`documento`, `fecha_data`)', $sql);
+        $this->assertStringContainsString('ENGINE=InnoDB', $sql);
+        $this->assertDoesNotMatchRegularExpression('/\b(DROP|TRUNCATE)\b/i', $sql);
+    }
+
     private function sql(string $filename): string
     {
         $contents = file_get_contents(dirname(__DIR__, 3).'/database/sql/'.$filename);

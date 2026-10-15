@@ -92,5 +92,60 @@
                 </div>
             </form>
         </div>
+
+        @if ($searchEnabled)
+            <div class="kp-panel overflow-hidden">
+                <div class="border-b border-border px-4 py-3">
+                    <h2 class="text-sm font-semibold text-ink">KP Search · Preview y mapping</h2>
+                    <p class="mt-0.5 text-xs text-muted">PERSONAS y TELÉFONOS están disponibles. El batch no se registra ni procesa hasta la confirmación.</p>
+                </div>
+
+                <form method="POST" action="{{ route('imports.search.preview') }}" enctype="multipart/form-data" data-search-import-form>
+                    @csrf
+                    <div class="grid gap-4 p-4 md:grid-cols-3">
+                        <label class="kp-label">
+                            Dataset
+                            <select name="dataset_code" required class="kp-field normal-case tracking-normal" data-search-dataset>
+                                @foreach ($searchDatasets as $dataset)
+                                    @php($available = in_array($dataset->value, config('imports.search.available_datasets', []), true))
+                                    <option value="{{ $dataset->value }}" @disabled(! $available)>
+                                        {{ str($dataset->value)->replace('_', ' ')->title() }}{{ $available ? '' : ' · Próximamente' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </label>
+
+                        <label class="kp-label">
+                            Fuente
+                            <select name="source_code" required class="kp-field normal-case tracking-normal" data-search-source>
+                                <option value="">Selecciona una fuente</option>
+                                @foreach ($searchSources as $datasetCode => $sources)
+                                    @foreach ($sources as $source)
+                                        <option value="{{ $source->source_code }}" data-dataset="{{ $datasetCode }}">{{ $source->label }} · {{ $datasetCode }}</option>
+                                    @endforeach
+                                @endforeach
+                            </select>
+                            <span class="mt-1 hidden text-[11px] font-normal normal-case tracking-normal text-amber-700" data-search-source-notice>No hay fuentes registradas para el dataset seleccionado.</span>
+                        </label>
+
+                        <label class="kp-label">
+                            Modo de actualización
+                            <select name="refresh_mode" required class="kp-field normal-case tracking-normal">
+                                <option value="FULL_REPLACE">Reemplazo completo</option>
+                                <option value="SCOPE_REPLACE">Reemplazo por alcance</option>
+                            </select>
+                        </label>
+
+                        <label class="kp-label md:col-span-3">
+                            Archivo SEARCH
+                            <input type="file" name="archivo" required accept=".csv,.xlsx" class="mt-1 block w-full text-[13px] text-slate-600 file:mr-3 file:rounded-control file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700">
+                        </label>
+                    </div>
+                    <div class="flex justify-end border-t border-border bg-slate-50 px-4 py-3">
+                        <button type="submit" class="kp-btn-primary">Generar preview</button>
+                    </div>
+                </form>
+            </div>
+        @endif
     </div>
 @endsection

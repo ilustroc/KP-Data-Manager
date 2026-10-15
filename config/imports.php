@@ -14,7 +14,7 @@ return [
     'inbox_path' => env('IMPORT_INBOX_PATH') ?: storage_path('app/private/import-inbox'),
     'max_web_upload_mb' => (int) env('IMPORT_MAX_WEB_UPLOAD_MB', 50),
     'allowed_extensions' => $allowedExtensions,
-    'registration_types' => ['PAGOS', 'CARTERA'],
+    'registration_types' => ['PAGOS', 'CARTERA', 'SEARCH'],
 
     'allowed_mime_types' => [
         'csv' => [
@@ -40,9 +40,17 @@ return [
 
     'search' => [
         'type' => 'SEARCH',
-        'registration_enabled' => false,
+        'registration_enabled' => true,
         'control_connection' => 'mysql_control',
         'bronze_connection' => 'mysql_bronze',
+        'preview_rows' => 20,
+        'preview_error_limit' => 100,
+        'preview_ttl_minutes' => 30,
+        'available_datasets' => ['PERSONAS', 'TELEFONOS'],
+        'provisional_source_codes' => [
+            'PERSONAS' => 'BASE_PERSONAS',
+            'TELEFONOS' => 'BASE_TELEFONOS',
+        ],
         'scope_insert_chunk_size' => 1000,
         'tables' => [
             'datasets' => 'import_dataset',

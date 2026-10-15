@@ -182,6 +182,26 @@ Wandoo v1 valida exactamente 19 posiciones y conserva sus headers Unicode como c
 
 Los cuatro perfiles comparten `normalize_phone`: conserva únicamente celulares peruanos `9XXXXXXXX`, acepta opcionalmente el prefijo `51` y lo elimina, y descarta fijos, longitudes no canónicas y valores repetitivos. `extract_phones` separa celdas multivalor por `|`, `/`, `;`, CR o LF sin romper celulares formateados con espacios o guiones. La deduplicación ocurre después de normalizar y solo dentro de una misma operación. Caja Arequipa elimina whitespace de `COSECHA` solo al construir Silver; Bronze conserva el valor fuente.
 
+### SEARCH PERSONAS v1
+
+El loader SEARCH es independiente de Pagos y Carteras. PERSONAS v1 recibe un mapping versionado, conserva todas las posiciones fuente en `kp_bronze.search_raw_row`, acepta únicamente DNI ASCII de ocho dígitos y persiste Silver histórico por batch en `kp_silver.search_personas`. Dos filas del mismo batch con igual DNI son ambiguas: la segunda se registra como error, la barrera `UNIQUE (batch_id, documento)` evita una aceptación accidental y el batch completo queda sin publicación Gold.
+
+`row_hash` se calcula sobre el UTF-8 de un JSON canónico compacto, sin ordenar claves porque la estructura se construye en orden fijo: `{"version":1,"fields":[...]}`. Cada elemento incluye `position` (uno-based), `name` y `cell`; `cell` contiene un `type` explícito (`null`, `string`, `integer`, `decimal`, `date`, `datetime`, `time` o `boolean`) y `value`. Así `NULL`, cadena vacía, cero y texto `"0"` son distintos. La huella es `SHA-256` hexadecimal de ese JSON previo a la normalización Silver.
+
+`record_hash` usa el mismo JSON compacto y una lista fija de campos normalizados: `documento`, `paterno`, `materno`, `nombres`, `nombre_completo`, `fecha_nacimiento`, `direccion_origen`, `sexo`, `estado_civil`, `padre`, `madre`. Cada elemento incluye posición, nombre, tipo y valor; fechas usan ISO `YYYY-MM-DD` y `NULL` permanece tipado. La huella es el SHA-256 hexadecimal del UTF-8 resultante. Las pruebas comprueban determinismo y la distinción entre `NULL` y vacío en Raw.
+
+Una carga con filas inválidas conserva Bronze y las filas Silver válidas como histórico, pero no publica. Una carga completamente válida publica en una transacción InnoDB multi-schema. `SCOPE_REPLACE` reemplaza únicamente documentos de `import_scope_document`; `FULL_REPLACE` hace upsert de la población validada y elimina filas Gold obsoletas por `batch_id` dentro de la misma transacción. El publicador verifica la igualdad exacta Silver/scope, bloquea el batch y rechaza cualquier segunda fuente PERSONAS mientras no exista una política formal de precedencia.
+
+### SEARCH TELEFONOS v1
+
+TELEFONOS reutiliza el mismo parser, Bronze genérico, loader, scope y publicador SEARCH. El contrato fuente contiene exactamente `DOCUMENTO`, `TELEFONO`, `OPERADOR` y `FECHA DATA`. `DOCUMENTO` acepta DNI ASCII de ocho dígitos; `TELEFONO` acepta únicamente `9XXXXXXXX`, rechaza valores repetitivos y bloquea explícitamente `900000000` y `911111111`. `FECHA DATA` es obligatoria y admite fecha XLSX tipada o texto ISO `YYYY-MM-DD`.
+
+`operador_raw` conserva el texto funcional con trim y whitespace colapsado. `operador` se detecta en cualquier posición, sin distinguir mayúsculas y respetando límites de palabra, desde la lista cerrada compartida en `resources/contracts/search-telefonos-v1.json`. Los operadores se ordenan por longitud descendente para que `FLASH MOBILE` y `GUINEA MOBILE` prevalezcan sobre sus nombres cortos. Una fila sin coincidencias queda como `OPERATOR_INVALID`; dos operadores distintos producen `OPERATOR_AMBIGUOUS`.
+
+El `row_hash` mantiene el algoritmo canónico común sobre las cuatro celdas fuente previas a Silver. El `record_hash` usa, en orden, `documento`, `telefono`, `operador_raw`, `operador` y `fecha_data`, con tipo explícito y fecha ISO. Dos filas con el mismo par documento/teléfono dentro del batch producen `DUPLICATE_DOCUMENT_PHONE` y bloquean la publicación; un documento puede tener varios teléfonos y el mismo teléfono puede pertenecer a documentos distintos.
+
+`SCOPE_REPLACE` elimina en Gold exclusivamente los teléfonos de los documentos del scope oficial y luego inserta el conjunto Silver completo de esos documentos. `FULL_REPLACE` hace upsert set-based del batch y elimina las filas de batches anteriores. Ambas variantes se ejecutan en una sola transacción InnoDB multi-schema; Bronze y Silver nunca se eliminan. DM-F3 permite una sola fuente activa TELEFONOS hasta definir una política formal de fusión.
+
 Una caída no borra chunks ya confirmados. Las filas quedan trazables por `batch_id`; una futura operación controlada de rollback podría localizarlas con `WHERE batch_id = X`, pero esta fase no implementa borrados ni reprocesamiento.
 
 Los contadores persistidos representan únicamente chunks confirmados. Si falla el chunk actual, su transacción se revierte y no se suma a los contadores del batch.

@@ -25,7 +25,13 @@
                     @if (filled($batch->entidad))
                         {{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }} ·
                     @endif
-                    {{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }} · <x-utc-datetime :value="$batch->fecha_inicio" />
+                    @if (filled($batch->dataset_code))
+                        {{ $batch->dataset_code }} · {{ $batch->source_code }} · {{ $batch->refresh_mode }} ·
+                    @endif
+                    @if ($batch->tipo !== \App\ImportType::Search->value)
+                        {{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }} ·
+                    @endif
+                    <x-utc-datetime :value="$batch->fecha_inicio" />
                 </p>
             </div>
             <div class="flex shrink-0 flex-wrap gap-2">
@@ -158,9 +164,19 @@
 
                 <div class="border-t border-border p-3 lg:border-t-0">
                     <dl class="grid gap-x-3 gap-y-2 text-[13px] sm:grid-cols-[6rem_1fr_6rem_1fr]">
-                        <dt class="text-muted">Origen</dt><dd class="font-medium text-ink">{{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }}</dd>
+                        @if ($batch->tipo !== \App\ImportType::Search->value)
+                            <dt class="text-muted">Origen</dt><dd class="font-medium text-ink">{{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }}</dd>
+                        @endif
                         @if (filled($batch->entidad))
                             <dt class="text-muted">Entidad</dt><dd class="font-medium text-ink">{{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }}</dd>
+                        @endif
+                        @if (filled($batch->dataset_code))
+                            <dt class="text-muted">Dataset</dt><dd class="font-medium text-ink">{{ $batch->dataset_code }}</dd>
+                            <dt class="text-muted">Fuente</dt><dd class="font-medium text-ink">{{ $batch->source_code }}</dd>
+                            <dt class="text-muted">Modo</dt><dd class="font-medium text-ink">{{ $batch->refresh_mode }}</dd>
+                            <dt class="text-muted">Mapping</dt><dd class="font-medium text-ink">v{{ $batch->mapping_version }}</dd>
+                            <dt class="text-muted">Scope</dt><dd class="font-medium text-ink">{{ number_format((int) ($batch->scope_count ?? 0)) }}</dd>
+                            <dt class="text-muted">Publicadas</dt><dd class="font-medium text-ink">{{ number_format((int) ($batch->rows_published ?? 0)) }}</dd>
                         @endif
                         <dt class="text-muted">Registrada</dt><dd class="text-ink"><x-utc-datetime :value="$batch->fecha_inicio" /></dd>
                         <dt class="text-muted">Finalizada</dt><dd class="text-ink"><x-utc-datetime :value="$batch->fecha_fin" /></dd>

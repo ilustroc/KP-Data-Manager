@@ -55,6 +55,9 @@
                                         @if (filled($batch->entidad))
                                             / {{ \App\FinancialEntity::tryFrom($batch->entidad)?->label() ?? $batch->entidad }}
                                         @endif
+                                        @if (filled($batch->dataset_code))
+                                            / {{ $batch->dataset_code }} · {{ $batch->source_code }}
+                                        @endif
                                     </p>
                                     <p class="text-[11px] text-muted">{{ \App\ImportOrigin::tryFrom($batch->origen)?->label() ?? $batch->origen }}</p>
                                 </td>

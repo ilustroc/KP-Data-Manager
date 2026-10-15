@@ -18,6 +18,10 @@ class BatchRecord:
     archivo_sha256: str | None
     entidad: str | None = None
     perfil_version: str | None = None
+    dataset_code: str | None = None
+    source_code: str | None = None
+    refresh_mode: str | None = None
+    mapping_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +36,117 @@ class CellValue:
 class SourceRow:
     number: int
     values: Mapping[str, CellValue]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSourceRow:
+    number: int
+    headers: tuple[str, ...]
+    cells: tuple[CellValue, ...]
+    mapped_values: Mapping[str, CellValue]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchRawRecord:
+    batch_id: int
+    dataset_code: str
+    source_code: str
+    source_row: int
+    source_file: str
+    raw_payload: str
+    row_hash: str
+    ingested_at: datetime
+
+    def as_insert_tuple(self) -> tuple[Any, ...]:
+        return (
+            self.batch_id,
+            self.dataset_code,
+            self.source_code,
+            self.source_row,
+            self.source_file,
+            self.raw_payload,
+            self.row_hash,
+            self.ingested_at,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPersonRecord:
+    source_row: int
+    documento: str
+    paterno: str | None
+    materno: str | None
+    nombres: str | None
+    nombre_completo: str | None
+    fecha_nacimiento: date | None
+    direccion_origen: str | None
+    sexo: str | None
+    estado_civil: str | None
+    padre: str | None
+    madre: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (
+            self.documento,
+            self.paterno,
+            self.materno,
+            self.nombres,
+            self.nombre_completo,
+            self.fecha_nacimiento,
+            self.direccion_origen,
+            self.sexo,
+            self.estado_civil,
+            self.padre,
+            self.madre,
+            self.source_code,
+            self.batch_id,
+            source_raw_id,
+            self.record_hash,
+            self.created_at,
+        )
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.documento,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPhoneRecord:
+    source_row: int
+    documento: str
+    telefono: str
+    operador: str
+    operador_raw: str
+    fecha_data: date
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (
+            self.documento,
+            self.telefono,
+            self.operador,
+            self.operador_raw,
+            self.fecha_data,
+            self.source_code,
+            self.batch_id,
+            source_raw_id,
+            self.record_hash,
+            self.created_at,
+        )
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.documento, self.telefono)
+
+
+SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -580,6 +695,24 @@ class PortfolioChunk:
         self.error_rows = 0
 
 
+@dataclass(slots=True)
+class SearchChunk:
+    raw_records: list[SearchRawRecord] = field(default_factory=list)
+    records: list[SearchNormalizedRecord] = field(default_factory=list)
+    errors: list[RowError] = field(default_factory=list)
+    file_rows: int = 0
+    error_rows: int = 0
+    duplicate_rows: int = 0
+
+    def clear(self) -> None:
+        self.raw_records.clear()
+        self.records.clear()
+        self.errors.clear()
+        self.file_rows = 0
+        self.error_rows = 0
+        self.duplicate_rows = 0
+
+
 @dataclass(frozen=True, slots=True)
 class RowError:
     batch_id: int
@@ -606,6 +739,7 @@ class ProcessingStats:
     inserted_rows: int = 0
     error_rows: int = 0
     duplicate_rows: int = 0
+    scope_count: int = 0
 
 
 @dataclass(slots=True)
@@ -663,4 +797,35 @@ class CarteraDatabasePort(DatabasePort, Protocol):
         self,
         records: Sequence[PortfolioRecord],
         errors: Sequence[RowError],
+    ) -> None: ...
+
+
+class SearchDatabasePort(DatabasePort, Protocol):
+    def get_search_mapping(self, batch: BatchRecord) -> Sequence[Mapping[str, Any]]: ...
+
+    def existing_search_record_keys(
+        self,
+        batch: BatchRecord,
+        records: Sequence[SearchNormalizedRecord],
+    ) -> set[tuple[str, ...]]: ...
+
+    def insert_search_chunk(
+        self,
+        raw_records: Sequence[SearchRawRecord],
+        records: Sequence[SearchNormalizedRecord],
+        errors: Sequence[RowError],
+    ) -> int: ...
+
+    def finish_search_with_errors(
+        self,
+        batch_id: int,
+        finished_at: datetime,
+        stats: ProcessingStats,
+    ) -> None: ...
+
+    def publish_search(
+        self,
+        batch: BatchRecord,
+        published_at: datetime,
+        stats: ProcessingStats,
     ) -> None: ...

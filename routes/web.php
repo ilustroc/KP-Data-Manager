@@ -10,6 +10,7 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PaymentCorrectionController;
 use App\Http\Controllers\PaymentDocumentController;
 use App\Http\Controllers\PaymentHistoryController;
+use App\Http\Controllers\SearchImportController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard');
@@ -31,6 +32,14 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::middleware('can:operate')->group(function (): void {
             Route::get('/nueva', [ImportController::class, 'create'])->name('create');
             Route::post('/', [ImportController::class, 'store'])->name('store');
+            Route::post('/search/preview', [SearchImportController::class, 'preview'])->name('search.preview');
+            Route::get('/search/preview/{token}', [SearchImportController::class, 'show'])
+                ->whereUuid('token')
+                ->name('search.preview.show');
+            Route::get('/search/preview/{token}/errores', [SearchImportController::class, 'downloadErrors'])
+                ->whereUuid('token')
+                ->name('search.preview.errors');
+            Route::post('/search/confirmar', [SearchImportController::class, 'confirm'])->name('search.confirm');
             Route::post('/{batch_id}/procesar', ImportProcessController::class)
                 ->whereNumber('batch_id')
                 ->name('process');

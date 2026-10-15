@@ -35,14 +35,14 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
     public function test_source_catalog_allows_only_configured_refresh_modes(): void
     {
         $this->insertDataset(DatasetCode::Telefonos, 'Teléfonos', 20);
-        $this->insertSource('PROVEEDOR_X', 'Proveedor X');
+        $this->insertSource('FUENTE_PRUEBA', 'Fuente de prueba');
         $this->insertDatasetSource(
             DatasetCode::Telefonos,
-            'PROVEEDOR_X',
+            'FUENTE_PRUEBA',
             allowsScopeReplace: true,
         );
         $service = app(SearchSourceCatalogService::class);
-        $source = SearchSourceCode::from('proveedor_x');
+        $source = SearchSourceCode::from('fuente_prueba');
 
         $definition = $service->requireAllowed(
             DatasetCode::Telefonos,
@@ -50,7 +50,7 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
             RefreshMode::ScopeReplace,
         );
 
-        $this->assertSame('PROVEEDOR_X', $definition->source_code);
+        $this->assertSame('FUENTE_PRUEBA', $definition->source_code);
         $this->assertCount(1, $service->activeForDataset(DatasetCode::Telefonos));
 
         $this->expectException(SearchImportConfigurationException::class);
@@ -86,7 +86,7 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
         $batchId = $this->createBatch([
             'tipo' => ImportType::Search->value,
             'dataset_code' => DatasetCode::Telefonos->value,
-            'source_code' => 'PROVEEDOR_X',
+            'source_code' => 'FUENTE_PRUEBA',
             'refresh_mode' => RefreshMode::ScopeReplace->value,
         ]);
         $service = app(ImportScopeDocumentService::class);
@@ -137,8 +137,9 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
         }
     }
 
-    public function test_search_is_not_exposed_or_accepted_before_preview_flow_exists(): void
+    public function test_search_preview_is_exposed_but_generic_registration_still_rejects_search(): void
     {
+        config(['imports.registration_types' => ['PAGOS', 'CARTERA', 'SEARCH']]);
         Queue::fake();
         Storage::fake('imports');
         $user = User::factory()->operator()->create();
@@ -146,7 +147,7 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
         $this->actingAs($user)
             ->get(route('imports.create'))
             ->assertOk()
-            ->assertDontSee('KP Search');
+            ->assertSee('KP Search');
 
         $this->actingAs($user)
             ->from(route('imports.create'))
@@ -155,7 +156,7 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
                 'origen' => 'MANUAL',
                 'archivo' => $this->validCsv(),
             ])
-            ->assertInvalid('tipo');
+            ->assertInvalid('archivo');
 
         $this->assertDatabaseCount('import_batch', 0);
         Queue::assertNothingPushed();
