@@ -124,7 +124,7 @@ final class SearchImportController extends Controller
                 try {
                     fwrite($stream, "\xEF\xBB\xBF");
                     fputcsv($stream, ['FILA', 'DOCUMENTO', 'TELEFONO', 'CAMPO', 'CODIGO_ERROR', 'DESCRIPCION', 'VALOR_ORIGINAL']);
-                    $previews->writePhoneErrors($preview, function (array $error) use ($stream): void {
+                    $previews->writeErrors($preview, function (array $error) use ($stream): void {
                         fputcsv($stream, [
                             $error['row'],
                             $error['document'],

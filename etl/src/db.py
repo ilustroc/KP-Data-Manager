@@ -26,6 +26,10 @@ from .domain.models import (
     SearchNormalizedRecord,
     SearchPersonRecord,
     SearchPhoneRecord,
+    SearchEmailRecord,
+    SearchAddressRecord,
+    SearchVehicleRecord,
+    SearchPropertyRecord,
     SearchRawRecord,
     WandooPortfolioRecord,
 )
@@ -206,12 +210,29 @@ class MySqlDatabase:
                 batch.batch_id,
                 *(value for record in records for value in record.deduplication_key),
             )
+        elif batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}:
+            tables = {
+                "CORREOS": "search_correos",
+                "DIRECCIONES": "search_direcciones",
+                "VEHICULOS": "search_vehiculos",
+                "PROPIEDADES": "search_propiedades",
+            }
+            hashes = [record.record_hash for record in records]
+            placeholders = ", ".join(["%s"] * len(hashes))
+            sql = f"""
+                SELECT record_hash
+                FROM `{self.settings.silver_database}`.`{tables[batch.dataset_code]}`
+                WHERE batch_id = %s AND record_hash IN ({placeholders})
+            """
+            values = (batch.batch_id, *hashes)
         else:
             raise RuntimeError("Dataset SEARCH no soportado para deduplicación.")
         with self.connection.cursor() as cursor:
             cursor.execute(sql, values)
             if batch.dataset_code == "PERSONAS":
                 return {(str(row["documento"]),) for row in cursor.fetchall()}
+            if batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}:
+                return {(str(row["record_hash"]),) for row in cursor.fetchall()}
             return {
                 (str(row["documento"]), str(row["telefono"])) for row in cursor.fetchall()
             }
@@ -221,6 +242,7 @@ class MySqlDatabase:
         raw_records: Sequence[SearchRawRecord],
         records: Sequence[SearchNormalizedRecord],
         errors: Sequence[RowError],
+        scope_documents: Sequence[str],
     ) -> int:
         if not raw_records:
             return 0
@@ -242,6 +264,33 @@ class MySqlDatabase:
                 (`documento`, `telefono`, `operador`, `operador_raw`, `fecha_data`,
                  `source_code`, `batch_id`, `source_raw_id`, `record_hash`, `created_at`)
             VALUES ({", ".join(["%s"] * 10)})
+        """
+        email_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_correos`
+                (`documento`, `correo`, `correo_original`, `source_code`, `batch_id`,
+                 `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 8)})
+        """
+        address_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_direcciones`
+                (`documento`, `direccion`, `departamento`, `provincia`, `distrito`,
+                 `data_procedencia`, `procedencia_anio`, `source_code`, `batch_id`,
+                 `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 12)})
+        """
+        vehicle_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_vehiculos`
+                (`documento`, `nombre_completo_fuente`, `clase`, `anio_compra`,
+                 `anio_fabricacion`, `marca`, `placa`, `placa_original`,
+                 `numero_transferencias`, `source_code`, `batch_id`, `source_raw_id`,
+                 `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 14)})
+        """
+        property_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_propiedades`
+                (`documento`, `partida_registral`, `zona_registral`, `oficina`,
+                 `source_code`, `batch_id`, `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 9)})
         """
         scope_sql = f"""
             INSERT INTO `{self.settings.control_database}`.`import_scope_document`
@@ -279,43 +328,63 @@ class MySqlDatabase:
                         silver_sql = person_sql
                     elif record_type is SearchPhoneRecord:
                         silver_sql = phone_sql
+                    elif record_type is SearchEmailRecord:
+                        silver_sql = email_sql
+                    elif record_type is SearchAddressRecord:
+                        silver_sql = address_sql
+                    elif record_type is SearchVehicleRecord:
+                        silver_sql = vehicle_sql
+                    elif record_type is SearchPropertyRecord:
+                        silver_sql = property_sql
                     else:
                         raise RuntimeError("Tipo de registro SEARCH no soportado.")
                     cursor.executemany(
                         silver_sql,
                         [record.as_insert_tuple(raw_ids[record.source_row]) for record in records],
                     )
-                    documents = list(dict.fromkeys(record.documento for record in records))
+                    documents = list(dict.fromkeys(scope_documents))
+                    if not documents:
+                        documents = list(dict.fromkeys(record.documento for record in records))
+                    if documents:
+                        placeholders = ", ".join(["%s"] * len(documents))
+                        cursor.execute(
+                            f"""
+                                SELECT documento
+                                FROM `{self.settings.control_database}`.`import_scope_document`
+                                WHERE batch_id = %s AND documento IN ({placeholders})
+                            """,
+                            (raw_records[0].batch_id, *documents),
+                        )
+                        existing_documents = {
+                            str(row["documento"]) for row in cursor.fetchall()
+                        }
+                        new_documents = [
+                            document for document in documents if document not in existing_documents
+                        ]
+                        if new_documents:
+                            cursor.executemany(
+                                scope_sql,
+                                [
+                                    (
+                                        raw_records[0].batch_id,
+                                        document,
+                                        raw_records[0].ingested_at,
+                                    )
+                                    for document in new_documents
+                                ],
+                            )
+                            inserted_scope_documents = len(new_documents)
+                elif scope_documents:
+                    documents = list(dict.fromkeys(scope_documents))
                     placeholders = ", ".join(["%s"] * len(documents))
                     cursor.execute(
-                        f"""
-                            SELECT documento
-                            FROM `{self.settings.control_database}`.`import_scope_document`
-                            WHERE batch_id = %s AND documento IN ({placeholders})
-                        """,
+                        f"SELECT documento FROM `{self.settings.control_database}`.`import_scope_document` WHERE batch_id = %s AND documento IN ({placeholders})",
                         (raw_records[0].batch_id, *documents),
                     )
-                    existing_documents = {
-                        str(row["documento"]) for row in cursor.fetchall()
-                    }
-                    new_documents = [
-                        document for document in documents if document not in existing_documents
-                    ]
+                    existing_documents = {str(row["documento"]) for row in cursor.fetchall()}
+                    new_documents = [document for document in documents if document not in existing_documents]
                     if new_documents:
-                        created_at_by_document = {
-                            record.documento: record.created_at for record in records
-                        }
-                        cursor.executemany(
-                            scope_sql,
-                            [
-                                (
-                                    raw_records[0].batch_id,
-                                    document,
-                                    created_at_by_document[document],
-                                )
-                                for document in new_documents
-                            ],
-                        )
+                        cursor.executemany(scope_sql, [(raw_records[0].batch_id, document, raw_records[0].ingested_at) for document in new_documents])
                         inserted_scope_documents = len(new_documents)
                 if errors:
                     cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
@@ -364,16 +433,17 @@ class MySqlDatabase:
     ) -> None:
         if batch.source_code is None:
             raise RuntimeError("El publicador SEARCH recibió un batch incompatible.")
-        if batch.dataset_code == "PERSONAS":
-            silver_table = "search_personas"
-            silver_id = "person_id"
-            gold_table = "search_person_index"
-        elif batch.dataset_code == "TELEFONOS":
-            silver_table = "search_telefonos"
-            silver_id = "phone_id"
-            gold_table = "search_telefonos"
-        else:
+        tables = {
+            "PERSONAS": ("search_personas", "person_id", "search_person_index"),
+            "TELEFONOS": ("search_telefonos", "phone_id", "search_telefonos"),
+            "CORREOS": ("search_correos", "email_id", "search_correos"),
+            "DIRECCIONES": ("search_direcciones", "address_id", "search_direcciones"),
+            "VEHICULOS": ("search_vehiculos", "vehicle_id", "search_vehiculos"),
+            "PROPIEDADES": ("search_propiedades", "property_id", "search_propiedades"),
+        }
+        if batch.dataset_code not in tables:
             raise RuntimeError("El publicador SEARCH recibió un dataset no soportado.")
+        silver_table, silver_id, gold_table = tables[batch.dataset_code]
         self.connection.begin()
         try:
             with self.connection.cursor() as cursor:
@@ -492,7 +562,8 @@ class MySqlDatabase:
                     (batch.batch_id,),
                 )
                 scope_without_silver = int(cursor.fetchone()["total"])
-                if silver_without_scope or scope_without_silver:
+                allows_scope_without_silver = batch.dataset_code == "DIRECCIONES"
+                if silver_without_scope or (scope_without_silver and not allows_scope_without_silver):
                     raise RuntimeError("El scope oficial no corresponde exactamente a Silver SEARCH.")
 
                 if batch.refresh_mode == "SCOPE_REPLACE":
@@ -565,6 +636,18 @@ class MySqlDatabase:
         if batch.dataset_code == "TELEFONOS":
             self._insert_gold_phones(cursor, batch.batch_id, published_at, upsert=upsert)
             return
+        if batch.dataset_code == "CORREOS":
+            self._insert_gold_correos(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "DIRECCIONES":
+            self._insert_gold_direcciones(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "VEHICULOS":
+            self._insert_gold_vehiculos(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "PROPIEDADES":
+            self._insert_gold_propiedades(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
         if batch.dataset_code != "PERSONAS":
             raise RuntimeError("Dataset SEARCH no soportado para publicación Gold.")
         sql = f"""
@@ -621,6 +704,50 @@ class MySqlDatabase:
                     batch_id = VALUES(batch_id),
                     updated_at = VALUES(updated_at)
             """
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_correos(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""
+            INSERT INTO `{self.settings.gold_database}`.`search_correos`
+                (`documento`, `correo`, `correo_original`, `source_code`, `batch_id`, `updated_at`)
+            SELECT documento, correo, correo_original, source_code, batch_id, %s
+            FROM `{self.settings.silver_database}`.`search_correos` WHERE batch_id = %s
+        """
+        if upsert:
+            sql += """ ON DUPLICATE KEY UPDATE correo_original = VALUES(correo_original), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at) """
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_direcciones(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""
+            INSERT INTO `{self.settings.gold_database}`.`search_direcciones`
+                (`documento`, `direccion`, `departamento`, `provincia`, `distrito`, `data_procedencia`, `procedencia_anio`, `record_hash`, `source_code`, `batch_id`, `updated_at`)
+            SELECT documento, direccion, departamento, provincia, distrito, data_procedencia, procedencia_anio, record_hash, source_code, batch_id, %s
+            FROM `{self.settings.silver_database}`.`search_direcciones` WHERE batch_id = %s
+        """
+        if upsert:
+            sql += """ ON DUPLICATE KEY UPDATE direccion = VALUES(direccion), departamento = VALUES(departamento), provincia = VALUES(provincia), distrito = VALUES(distrito), data_procedencia = VALUES(data_procedencia), procedencia_anio = VALUES(procedencia_anio), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at) """
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_vehiculos(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""
+            INSERT INTO `{self.settings.gold_database}`.`search_vehiculos`
+                (`documento`, `nombre_completo_fuente`, `clase`, `anio_compra`, `anio_fabricacion`, `marca`, `placa`, `placa_original`, `numero_transferencias`, `record_hash`, `source_code`, `batch_id`, `updated_at`)
+            SELECT documento, nombre_completo_fuente, clase, anio_compra, anio_fabricacion, marca, placa, placa_original, numero_transferencias, record_hash, source_code, batch_id, %s
+            FROM `{self.settings.silver_database}`.`search_vehiculos` WHERE batch_id = %s
+        """
+        if upsert:
+            sql += """ ON DUPLICATE KEY UPDATE nombre_completo_fuente = VALUES(nombre_completo_fuente), clase = VALUES(clase), anio_compra = VALUES(anio_compra), anio_fabricacion = VALUES(anio_fabricacion), marca = VALUES(marca), placa = VALUES(placa), placa_original = VALUES(placa_original), numero_transferencias = VALUES(numero_transferencias), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at) """
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_propiedades(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""
+            INSERT INTO `{self.settings.gold_database}`.`search_propiedades`
+                (`documento`, `partida_registral`, `zona_registral`, `oficina`, `record_hash`, `source_code`, `batch_id`, `updated_at`)
+            SELECT documento, partida_registral, zona_registral, oficina, record_hash, source_code, batch_id, %s
+            FROM `{self.settings.silver_database}`.`search_propiedades` WHERE batch_id = %s
+        """
+        if upsert:
+            sql += """ ON DUPLICATE KEY UPDATE partida_registral = VALUES(partida_registral), zona_registral = VALUES(zona_registral), oficina = VALUES(oficina), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at) """
         cursor.execute(sql, (published_at, batch_id))
 
     def insert_cartera_chunk(

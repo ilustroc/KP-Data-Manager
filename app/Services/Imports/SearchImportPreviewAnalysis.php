@@ -6,6 +6,8 @@ final readonly class SearchImportPreviewAnalysis
 {
     /**
      * @param  list<array{row: int, document: string|null, phone: string|null, field: string, error: string, message: string}>  $errors
+     * @param  list<array{row: int, document: string|null, phone: string|null, field: string, error: string, message: string}>  $warnings
+     * @param  array<string, int>  $metrics
      */
     public function __construct(
         public int $totalRows,
@@ -25,6 +27,9 @@ final readonly class SearchImportPreviewAnalysis
         public int $estimatedScope,
         public int $totalErrors,
         public array $errors,
+        public int $warningsTotal = 0,
+        public array $warnings = [],
+        public array $metrics = [],
     ) {}
 
     public function isReady(): bool
@@ -62,6 +67,9 @@ final readonly class SearchImportPreviewAnalysis
             estimatedScope: (int) $values['estimatedScope'],
             totalErrors: (int) $values['totalErrors'],
             errors: array_values($values['errors']),
+            warningsTotal: (int) ($values['warningsTotal'] ?? 0),
+            warnings: array_values($values['warnings'] ?? []),
+            metrics: array_map(static fn (mixed $value): int => (int) $value, $values['metrics'] ?? []),
         );
     }
 }

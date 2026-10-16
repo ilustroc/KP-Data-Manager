@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path, PurePath
 from typing import Callable
@@ -24,10 +25,15 @@ from ..domain.models import (
     SearchNormalizedRecord,
 )
 from ..domain.normalizers import utc_now_naive
+from ..domain.normalizers import cell_to_text
 from ..parsers.search_parser import SearchParser
 from ..profiles.search.personas import PersonasV1Normalizer
 from ..profiles.search.personas import PERSON_FIELDS
 from ..profiles.search.telefonos import PHONE_FIELDS, TelefonosV1Normalizer
+from ..profiles.search.correos import EMAIL_FIELDS, CorreosV1Normalizer
+from ..profiles.search.direcciones import ADDRESS_FIELDS, DireccionesV1Normalizer
+from ..profiles.search.vehiculos import VEHICLE_FIELDS, VehiculosV1Normalizer
+from ..profiles.search.propiedades import PROPERTY_FIELDS, PropiedadesV1Normalizer
 from .pagos_loader import ProcessingResult
 
 LOGGER = logging.getLogger("kpdm.etl.search")
@@ -93,15 +99,24 @@ class SearchLoader:
         ingested_at: datetime,
     ) -> None:
         chunk = SearchChunk()
+        conflicts: dict[tuple[str, str], tuple[object, ...]] = {}
         for row in parser.rows(source_path):
             raw, record, errors = normalizer.normalize(row, batch, ingested_at)
             chunk.raw_records.append(raw)
             chunk.file_rows += 1
-            if record is None:
+            scope_document = self._scope_document(row)
+            if scope_document is not None and (record is not None or not errors):
+                chunk.scope_documents.append(scope_document)
+            if record is None and errors:
                 chunk.error_rows += 1
                 chunk.errors.extend(errors)
-            else:
-                chunk.records.append(record)
+            elif record is not None:
+                conflict = self._conflict_error(batch, record, conflicts, ingested_at)
+                if conflict is not None:
+                    chunk.error_rows += 1
+                    chunk.errors.append(conflict)
+                else:
+                    chunk.records.append(record)
             if chunk.file_rows >= self.settings.insert_batch_size:
                 self._flush_chunk(batch, chunk, stats)
         if chunk.file_rows:
@@ -113,7 +128,7 @@ class SearchLoader:
         seen_in_chunk: set[tuple[str, ...]] = set()
         for record in chunk.records:
             if record.deduplication_key in seen_in_chunk:
-                self._append_duplicate_error(chunk, record)
+                self._append_duplicate(chunk, record, batch)
                 continue
             seen_in_chunk.add(record.deduplication_key)
             unique_records.append(record)
@@ -122,7 +137,7 @@ class SearchLoader:
         accepted: list[SearchNormalizedRecord] = []
         for record in unique_records:
             if record.deduplication_key in existing:
-                self._append_duplicate_error(chunk, record)
+                self._append_duplicate(chunk, record, batch)
             else:
                 accepted.append(record)
 
@@ -130,6 +145,7 @@ class SearchLoader:
             chunk.raw_records,
             accepted,
             chunk.errors,
+            list(dict.fromkeys(chunk.scope_documents)),
         )
         stats.file_rows += chunk.file_rows
         stats.inserted_rows += len(accepted)
@@ -149,11 +165,25 @@ class SearchLoader:
         )
         chunk.clear()
 
-    def _append_duplicate_error(
+    @staticmethod
+    def _scope_document(row) -> str | None:
+        try:
+            document = cell_to_text(row.mapped_values["documento"])
+        except (KeyError, ValueError):
+            return None
+        if document is None or re.fullmatch(r"[0-9]{8}", document) is None:
+            return None
+        return document
+
+    def _append_duplicate(
         self,
         chunk: SearchChunk,
         record: SearchNormalizedRecord,
+        batch: BatchRecord,
     ) -> None:
+        if batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}:
+            chunk.duplicate_rows += 1
+            return
         is_phone = len(record.deduplication_key) == 2
         chunk.errors.append(
             RowError(
@@ -173,6 +203,25 @@ class SearchLoader:
         chunk.duplicate_rows += 1
 
     @staticmethod
+    def _conflict_error(
+        batch: BatchRecord,
+        record: SearchNormalizedRecord,
+        conflicts: dict[tuple[str, str], tuple[object, ...]],
+        created_at: datetime,
+    ) -> RowError | None:
+        if batch.dataset_code not in {"VEHICULOS", "PROPIEDADES"}:
+            return None
+        key = getattr(record, "conflict_key", None)
+        if key is None:
+            return None
+        signature = getattr(record, "conflict_signature")
+        previous = conflicts.setdefault(key, signature)
+        if previous == signature:
+            return None
+        message = "VEHICLE_PLATE_CONFLICT" if batch.dataset_code == "VEHICULOS" else "PROPERTY_CONFLICT"
+        return RowError(batch.batch_id, record.source_row, "placa" if batch.dataset_code == "VEHICULOS" else "partida_registral", key[1], message, created_at)
+
+    @staticmethod
     def _validate_batch(batch: BatchRecord) -> None:
         if batch.estado != "PENDIENTE":
             raise BatchStateError(
@@ -180,7 +229,7 @@ class SearchLoader:
             )
         if (
             batch.tipo != "SEARCH"
-            or batch.dataset_code not in {"PERSONAS", "TELEFONOS"}
+            or batch.dataset_code not in {"PERSONAS", "TELEFONOS", "CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}
             or batch.source_code is None
             or batch.mapping_version is None
             or batch.perfil_version != "1"
@@ -193,6 +242,14 @@ class SearchLoader:
             return PERSON_FIELDS, PersonasV1Normalizer(self.settings.error_value_max_length)
         if batch.dataset_code == "TELEFONOS":
             return PHONE_FIELDS, TelefonosV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "CORREOS":
+            return EMAIL_FIELDS, CorreosV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "DIRECCIONES":
+            return ADDRESS_FIELDS, DireccionesV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "VEHICULOS":
+            return VEHICLE_FIELDS, VehiculosV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "PROPIEDADES":
+            return PROPERTY_FIELDS, PropiedadesV1Normalizer(self.settings.error_value_max_length)
         raise StructuralFileError("Dataset SEARCH no soportado.")
 
     def _validated_source_path(self, batch: BatchRecord) -> Path:

@@ -146,7 +146,110 @@ class SearchPhoneRecord:
         return (self.documento, self.telefono)
 
 
-SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord
+@dataclass(frozen=True, slots=True)
+class SearchEmailRecord:
+    source_row: int
+    documento: str
+    correo: str
+    correo_original: str
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.correo, self.correo_original, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchAddressRecord:
+    source_row: int
+    documento: str
+    direccion: str | None
+    departamento: str | None
+    provincia: str | None
+    distrito: str | None
+    data_procedencia: str | None
+    procedencia_anio: int | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.direccion, self.departamento, self.provincia, self.distrito, self.data_procedencia, self.procedencia_anio, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchVehicleRecord:
+    source_row: int
+    documento: str
+    nombre_completo_fuente: str | None
+    clase: str | None
+    anio_compra: int | None
+    anio_fabricacion: int | None
+    marca: str | None
+    placa: str | None
+    placa_original: str | None
+    numero_transferencias: int | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.nombre_completo_fuente, self.clase, self.anio_compra, self.anio_fabricacion, self.marca, self.placa, self.placa_original, self.numero_transferencias, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+    @property
+    def conflict_key(self) -> tuple[str, str] | None:
+        return None if self.placa is None else (self.documento, self.placa)
+
+    @property
+    def conflict_signature(self) -> tuple[object, ...]:
+        return (self.nombre_completo_fuente, self.clase, self.anio_compra, self.anio_fabricacion, self.marca, self.numero_transferencias)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPropertyRecord:
+    source_row: int
+    documento: str
+    partida_registral: str
+    zona_registral: str | None
+    oficina: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.partida_registral, self.zona_registral, self.oficina, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+    @property
+    def conflict_key(self) -> tuple[str, str]:
+        return (self.documento, self.partida_registral)
+
+    @property
+    def conflict_signature(self) -> tuple[object, ...]:
+        return (self.zona_registral, self.oficina)
+
+
+SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord | SearchEmailRecord | SearchAddressRecord | SearchVehicleRecord | SearchPropertyRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -699,6 +802,7 @@ class PortfolioChunk:
 class SearchChunk:
     raw_records: list[SearchRawRecord] = field(default_factory=list)
     records: list[SearchNormalizedRecord] = field(default_factory=list)
+    scope_documents: list[str] = field(default_factory=list)
     errors: list[RowError] = field(default_factory=list)
     file_rows: int = 0
     error_rows: int = 0
@@ -707,6 +811,7 @@ class SearchChunk:
     def clear(self) -> None:
         self.raw_records.clear()
         self.records.clear()
+        self.scope_documents.clear()
         self.errors.clear()
         self.file_rows = 0
         self.error_rows = 0
@@ -814,6 +919,7 @@ class SearchDatabasePort(DatabasePort, Protocol):
         raw_records: Sequence[SearchRawRecord],
         records: Sequence[SearchNormalizedRecord],
         errors: Sequence[RowError],
+        scope_documents: Sequence[str],
     ) -> int: ...
 
     def finish_search_with_errors(

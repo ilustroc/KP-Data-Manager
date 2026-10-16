@@ -19,8 +19,8 @@
                         'Válidas' => $preview->analysis->validRows,
                         'Con error' => $preview->analysis->invalidRows,
                         'Documentos' => $preview->analysis->uniqueDocuments,
-                        'Teléfonos' => $preview->analysis->uniquePhones,
-                        'Duplicados' => $preview->analysis->duplicateDocumentPhones,
+                        ($preview->datasetCode === 'TELEFONOS' ? 'Teléfonos' : 'Registros únicos') => $preview->datasetCode === 'TELEFONOS' ? $preview->analysis->uniquePhones : ($preview->analysis->metrics['unique_emails'] ?? $preview->analysis->metrics['addresses'] ?? $preview->analysis->metrics['vehicles'] ?? $preview->analysis->metrics['properties'] ?? 0),
+                        'Duplicados' => $preview->datasetCode === 'TELEFONOS' ? $preview->analysis->duplicateDocumentPhones : ($preview->analysis->metrics['duplicates_exact'] ?? 0),
                     ] as $label => $value)
                         <div class="bg-white p-3"><span class="kp-label">{{ $label }}</span><p class="text-xl font-semibold">{{ number_format($value) }}</p></div>
                     @endforeach
@@ -29,6 +29,20 @@
                     {{ $preview->analysis->isReady() ? '✓ Archivo listo para procesar' : '✕ Archivo no apto para procesar' }}
                 </div>
             </div>
+        @endif
+
+        @if ($preview->analysis && $preview->analysis->warningsTotal > 0)
+            <section class="kp-panel mt-3 overflow-hidden" aria-labelledby="warning-summary-title">
+                <div class="border-b border-border px-4 py-3">
+                    <h2 id="warning-summary-title" class="text-sm font-semibold text-ink">Advertencias</h2>
+                    <p class="mt-0.5 text-xs text-muted">Las advertencias no bloquean la publicación; los registros repetidos exactos o direcciones vacías no se enviarán a Silver/Gold.</p>
+                </div>
+                <div class="grid gap-px bg-border sm:grid-cols-3">
+                    <div class="bg-white px-4 py-3"><span class="kp-label">Duplicados exactos</span><p class="mt-1 text-xl font-semibold">{{ number_format($preview->analysis->metrics['duplicates_exact'] ?? 0) }}</p></div>
+                    <div class="bg-white px-4 py-3"><span class="kp-label">Direcciones vacías</span><p class="mt-1 text-xl font-semibold">{{ number_format($preview->analysis->metrics['empty_address_rows'] ?? 0) }}</p></div>
+                    <div class="bg-white px-4 py-3"><span class="kp-label">Total advertencias</span><p class="mt-1 text-xl font-semibold">{{ number_format($preview->analysis->warningsTotal) }}</p></div>
+                </div>
+            </section>
         @endif
 
         @if ($preview->analysis && $preview->analysis->totalErrors > 0)

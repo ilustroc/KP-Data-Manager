@@ -182,6 +182,7 @@ class FakeSearchDatabase(FakeDatabase):
         raw_records: Sequence[SearchRawRecord],
         records: Sequence[SearchNormalizedRecord],
         errors: Sequence[RowError],
+        scope_documents: Sequence[str],
     ) -> int:
         self.raw_records.extend(raw_records)
         self.persons.extend(
@@ -189,7 +190,7 @@ class FakeSearchDatabase(FakeDatabase):
         )
         self.phones.extend(record for record in records if isinstance(record, SearchPhoneRecord))
         previous_scope_count = len(self.scope)
-        self.scope.update(record.documento for record in records)
+        self.scope.update(scope_documents)
         self.record_keys.update(record.deduplication_key for record in records)
         self.errors.extend(errors)
         return len(self.scope) - previous_scope_count

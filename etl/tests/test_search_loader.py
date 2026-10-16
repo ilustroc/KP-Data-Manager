@@ -11,6 +11,7 @@ from .conftest import FakeSearchDatabase, make_batch, stage_file
 
 
 HEADER = "DOCUMENTO,PATERNO,MATERNO,NOMBRES,NACIMIENTO,DIRECCION,SEXO,ESTADO CIVIL,PADRE,MADRE\n"
+ADDRESS_HEADER = "DOCUMENTO,DIRECCION,DEPARTAMENTO,PROVINCIA,DISTRITO,DATA PROCEDENCIA\n"
 
 
 def personas_batch(relative_path: str, sha256: str, refresh_mode: str = "FULL_REPLACE"):
@@ -24,6 +25,21 @@ def personas_batch(relative_path: str, sha256: str, refresh_mode: str = "FULL_RE
         relative_path=relative_path,
         extension="csv",
         original_name="personas.csv",
+        sha256=sha256,
+    )
+
+
+def addresses_batch(relative_path: str, sha256: str):
+    return make_batch(
+        tipo="SEARCH",
+        perfil_version="1",
+        dataset_code="DIRECCIONES",
+        source_code="BASE_DIRECCIONES",
+        refresh_mode="SCOPE_REPLACE",
+        mapping_version=1,
+        relative_path=relative_path,
+        extension="csv",
+        original_name="direcciones.csv",
         sha256=sha256,
     )
 
@@ -105,3 +121,41 @@ def test_publication_failure_marks_batch_failed_without_reporting_success(settin
 
     assert database.published is False
     assert database.failed_message is not None
+
+
+def test_empty_address_remains_in_scope_without_silver_record_and_publishes_scope_replace(settings, tmp_path):
+    source = tmp_path / "addresses.csv"
+    source.write_text(ADDRESS_HEADER + "80686913,,,,,RENIEC 2022\n", encoding="utf-8")
+    _, sha256 = stage_file(settings, source, "2026/10/123/direcciones.csv")
+    database = FakeSearchDatabase(addresses_batch("2026/10/123/direcciones.csv", sha256))
+    database.mapping = [
+        {
+            "source_position": position,
+            "source_column": source_name,
+            "target_column": target,
+            "is_required": target == "documento",
+            "transformation": "DIRECCIONES_V1",
+            "default_value": None,
+        }
+        for position, (source_name, target) in enumerate(
+            (
+                ("DOCUMENTO", "documento"),
+                ("DIRECCION", "direccion"),
+                ("DEPARTAMENTO", "departamento"),
+                ("PROVINCIA", "provincia"),
+                ("DISTRITO", "distrito"),
+                ("DATA PROCEDENCIA", "data_procedencia"),
+            ),
+            start=1,
+        )
+    ]
+
+    result = SearchLoader(database, settings).process(123)
+
+    assert result.status == "COMPLETADO"
+    assert result.stats.inserted_rows == 0
+    assert result.stats.error_rows == 0
+    assert result.stats.scope_count == 1
+    assert len(database.raw_records) == 1
+    assert database.scope == {"80686913"}
+    assert database.published is True

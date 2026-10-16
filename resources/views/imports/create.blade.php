@@ -97,7 +97,7 @@
             <div class="kp-panel overflow-hidden">
                 <div class="border-b border-border px-4 py-3">
                     <h2 class="text-sm font-semibold text-ink">KP Search · Preview y mapping</h2>
-                    <p class="mt-0.5 text-xs text-muted">PERSONAS y TELÉFONOS están disponibles. El batch no se registra ni procesa hasta la confirmación.</p>
+                    <p class="mt-0.5 text-xs text-muted">Los datasets habilitados usan preview completo antes de registrar o procesar un batch.</p>
                 </div>
 
                 <form method="POST" action="{{ route('imports.search.preview') }}" enctype="multipart/form-data" data-search-import-form>

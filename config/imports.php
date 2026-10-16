@@ -46,10 +46,14 @@ return [
         'preview_rows' => 20,
         'preview_error_limit' => 100,
         'preview_ttl_minutes' => 30,
-        'available_datasets' => ['PERSONAS', 'TELEFONOS'],
+        'available_datasets' => ['PERSONAS', 'TELEFONOS', 'CORREOS', 'DIRECCIONES', 'VEHICULOS', 'PROPIEDADES'],
         'provisional_source_codes' => [
             'PERSONAS' => 'BASE_PERSONAS',
             'TELEFONOS' => 'BASE_TELEFONOS',
+            'CORREOS' => 'BASE_CORREOS',
+            'DIRECCIONES' => 'BASE_DIRECCIONES',
+            'VEHICULOS' => 'BASE_VEHICULOS',
+            'PROPIEDADES' => 'BASE_SUNARP',
         ],
         'scope_insert_chunk_size' => 1000,
         'tables' => [

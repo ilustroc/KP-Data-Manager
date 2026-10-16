@@ -20,6 +20,7 @@ final class SearchImportPreviewService
         private readonly ImportFileService $files,
         private readonly SearchSpreadsheetPreviewReader $reader,
         private readonly SearchPhonePreviewAnalyzer $phoneAnalyzer,
+        private readonly SearchAssociatedPreviewAnalyzer $associatedAnalyzer,
         private readonly SearchImportDefinitionRegistry $definitions,
         private readonly SearchDatasetCatalogService $datasets,
         private readonly SearchSourceCatalogService $sources,
@@ -54,7 +55,8 @@ final class SearchImportPreviewService
             $expectedMapping = $definition->suggest($definition->expectedHeaders());
             $path = $this->files->disk()->path($storedPath);
             $previewData = $definition->requiresFullPreviewAnalysis()
-                ? $this->phoneAnalyzer->analyze(
+                ? $this->analyzeDataset(
+                    $dataset,
                     $path,
                     $metadata->extension,
                     $expectedMapping,
@@ -126,18 +128,33 @@ final class SearchImportPreviewService
     /**
      * @param  Closure(array{row: int, document: string|null, phone: string|null, field: string, error: string, message: string, value: string}): void  $writeError
      */
-    public function writePhoneErrors(SearchImportPreview $preview, Closure $writeError): SearchImportPreviewAnalysis
+    public function writeErrors(SearchImportPreview $preview, Closure $writeError): SearchImportPreviewAnalysis
     {
         $definition = $this->definitions->resolve(DatasetCode::from($preview->datasetCode));
         if (! $definition->requiresFullPreviewAnalysis()) {
             throw new InvalidImportFile('El dataset no admite un reporte de errores detallado.');
         }
 
-        return $this->phoneAnalyzer->writeErrors(
+        $dataset = DatasetCode::from($preview->datasetCode);
+        if ($dataset === DatasetCode::Telefonos) {
+            return $this->phoneAnalyzer->writeErrors(
+                $this->files->disk()->path($preview->storedPath),
+                $preview->metadata->extension,
+                $preview->suggestedMapping,
+                $writeError,
+            );
+        }
+
+        return $this->associatedAnalyzer->writeErrors(
+            $dataset,
             $this->files->disk()->path($preview->storedPath),
             $preview->metadata->extension,
             $preview->suggestedMapping,
-            $writeError,
+            static function (array $event) use ($writeError): void {
+                if (! $event['warning']) {
+                    $writeError($event);
+                }
+            },
         );
     }
 
@@ -151,7 +168,8 @@ final class SearchImportPreviewService
         $limit = (int) config('imports.search.preview_rows', 20);
         $definition = $this->definitions->resolve(DatasetCode::from($preview->datasetCode));
         if ($definition->requiresFullPreviewAnalysis()) {
-            return $this->phoneAnalyzer->analyze(
+            return $this->analyzeDataset(
+                DatasetCode::from($preview->datasetCode),
                 $path,
                 $preview->metadata->extension,
                 $mapping,
@@ -161,5 +179,21 @@ final class SearchImportPreviewService
         }
 
         return $this->reader->read($path, $preview->metadata->extension, $limit);
+    }
+
+    /** @param array<string, string> $mapping */
+    private function analyzeDataset(
+        DatasetCode $dataset,
+        string $path,
+        string $extension,
+        array $mapping,
+        int $previewLimit,
+        int $errorLimit,
+    ): array {
+        if ($dataset === DatasetCode::Telefonos) {
+            return $this->phoneAnalyzer->analyze($path, $extension, $mapping, $previewLimit, $errorLimit);
+        }
+
+        return $this->associatedAnalyzer->analyze($dataset, $path, $extension, $mapping, $previewLimit, $errorLimit);
     }
 }
