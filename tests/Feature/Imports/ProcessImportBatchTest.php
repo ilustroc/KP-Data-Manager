@@ -103,4 +103,29 @@ class ProcessImportBatchTest extends ImportFeatureTestCase
         $this->assertSame(ImportStatus::Error->value, $batch->estado);
         $this->assertSame('No fue posible iniciar el procesamiento.', $batch->mensaje_error);
     }
+
+    public function test_failed_callback_marks_processing_batch_as_error_without_exposing_worker_output(): void
+    {
+        $batchId = $this->createBatch(['estado' => ImportStatus::Processing->value]);
+
+        (new ProcessImportBatch($batchId))->failed(new EtlProcessFailed('PASSWORD=secret'));
+
+        $batch = $this->batchRow($batchId);
+        $this->assertSame(ImportStatus::Error->value, $batch->estado);
+        $this->assertSame('El procesamiento ETL terminó con error. Revisa el log técnico.', $batch->mensaje_error);
+    }
+
+    public function test_failed_callback_does_not_overwrite_terminal_batch_status(): void
+    {
+        $batchId = $this->createBatch([
+            'estado' => ImportStatus::Completed->value,
+            'mensaje_error' => null,
+        ]);
+
+        (new ProcessImportBatch($batchId))->failed(new EtlProcessFailed('worker failed'));
+
+        $batch = $this->batchRow($batchId);
+        $this->assertSame(ImportStatus::Completed->value, $batch->estado);
+        $this->assertNull($batch->mensaje_error);
+    }
 }

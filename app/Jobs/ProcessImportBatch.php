@@ -60,6 +60,13 @@ class ProcessImportBatch implements ShouldBeUnique, ShouldQueue
             'exit_code' => $result->exitCode,
             'duracion_segundos' => $result->durationSeconds,
             'ultimo_evento' => $result->lastEvent,
+            'stage' => $result->stage,
+            'error_type' => $result->errorType,
+            'error_code' => $result->errorCode,
+            'db_driver' => $result->dbDriver,
+            'connection_phase' => $result->connectionPhase,
+            'retryable' => $result->retryable,
+            'stderr_present' => $result->stderrPresent,
             'estado_batch' => $batchStatus?->value,
         ]);
 
@@ -75,9 +82,13 @@ class ProcessImportBatch implements ShouldBeUnique, ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
+        $markedError = app(ImportBatchProcessingService::class)
+            ->markFailedIfNonTerminal($this->batchId);
+
         Log::error('El job de procesamiento ETL terminó sin reintento automático.', [
             'batch_id' => $this->batchId,
             'exception_type' => $exception === null ? null : $exception::class,
+            'batch_marked_error' => $markedError,
         ]);
     }
 }

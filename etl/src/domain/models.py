@@ -249,7 +249,86 @@ class SearchPropertyRecord:
         return (self.zona_registral, self.oficina)
 
 
-SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord | SearchEmailRecord | SearchAddressRecord | SearchVehicleRecord | SearchPropertyRecord
+@dataclass(frozen=True, slots=True)
+class SearchSbsSummaryRecord:
+    source_row: int
+    documento: str
+    cod_sbs: str
+    fecha_reporte_sbs: str
+    cantidad_empresas: int
+    calificacion_normal: Decimal | None
+    calificacion_cpp: Decimal | None
+    calificacion_deficiente: Decimal | None
+    calificacion_dudoso: Decimal | None
+    calificacion_perdida: Decimal | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.cod_sbs, self.fecha_reporte_sbs, self.cantidad_empresas, self.calificacion_normal, self.calificacion_cpp, self.calificacion_deficiente, self.calificacion_dudoso, self.calificacion_perdida, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+    @property
+    def conflict_key(self) -> tuple[str, str, str]:
+        return (self.documento, self.fecha_reporte_sbs, self.cod_sbs)
+
+    @property
+    def conflict_signature(self) -> tuple[object, ...]:
+        return (self.cantidad_empresas, self.calificacion_normal, self.calificacion_cpp, self.calificacion_deficiente, self.calificacion_dudoso, self.calificacion_perdida)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSbsDetailRecord:
+    source_row: int
+    fecha_reporte_sbs: str
+    documento: str
+    cod_sbs: str
+    entidad: str | None
+    tipo_credito: str | None
+    condicion: str | None
+    monto: Decimal | None
+    dias_atraso: int | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.fecha_reporte_sbs, self.documento, self.cod_sbs, self.entidad, self.tipo_credito, self.condicion, self.monto, self.dias_atraso, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchEssaludRecord:
+    source_row: int
+    documento: str
+    periodo: str
+    ruc: str
+    nombre_empresa: str | None
+    sueldo: Decimal | None
+    situacion: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.periodo, self.ruc, self.nombre_empresa, self.sueldo, self.situacion, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord | SearchEmailRecord | SearchAddressRecord | SearchVehicleRecord | SearchPropertyRecord | SearchSbsSummaryRecord | SearchSbsDetailRecord | SearchEssaludRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -906,6 +985,10 @@ class CarteraDatabasePort(DatabasePort, Protocol):
 
 
 class SearchDatabasePort(DatabasePort, Protocol):
+    def preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats: ...
+
+    def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None: ...
+
     def get_search_mapping(self, batch: BatchRecord) -> Sequence[Mapping[str, Any]]: ...
 
     def existing_search_record_keys(
@@ -934,4 +1017,6 @@ class SearchDatabasePort(DatabasePort, Protocol):
         batch: BatchRecord,
         published_at: datetime,
         stats: ProcessingStats,
+        *,
+        recovery: bool = False,
     ) -> None: ...

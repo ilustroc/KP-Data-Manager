@@ -13,6 +13,9 @@ final readonly class SearchImportDefinitionRegistry
         private DireccionesImportDefinition $direcciones,
         private VehiculosImportDefinition $vehiculos,
         private PropiedadesImportDefinition $propiedades,
+        private SbsResumenImportDefinition $sbsResumen,
+        private SbsDetalleImportDefinition $sbsDetalle,
+        private LaboralEssaludImportDefinition $laboralEssalud,
     ) {}
 
     public function resolve(DatasetCode $dataset): SearchImportDefinition
@@ -24,6 +27,9 @@ final readonly class SearchImportDefinitionRegistry
             DatasetCode::Direcciones => $this->direcciones,
             DatasetCode::Vehiculos => $this->vehiculos,
             DatasetCode::Propiedades => $this->propiedades,
+            DatasetCode::SbsResumen => $this->sbsResumen,
+            DatasetCode::SbsDetalle => $this->sbsDetalle,
+            DatasetCode::LaboralEssalud => $this->laboralEssalud,
             default => throw new SearchImportConfigurationException(
                 "El dataset {$dataset->value} todavía no está disponible para carga.",
             ),

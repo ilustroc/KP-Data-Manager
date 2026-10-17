@@ -8,6 +8,13 @@ final readonly class EtlProcessResult
         public int $exitCode,
         public float $durationSeconds,
         public ?string $lastEvent,
+        public ?string $stage,
+        public ?string $errorType,
+        public ?int $errorCode,
+        public ?string $dbDriver,
+        public ?string $connectionPhase,
+        public ?bool $retryable,
+        public bool $stderrPresent,
     ) {}
 
     public function successful(): bool

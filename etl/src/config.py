@@ -51,6 +51,9 @@ class Settings:
     db_port: int
     db_username: str
     db_password: str
+    db_connect_timeout: int
+    db_read_timeout: int
+    db_write_timeout: int
     control_database: str
     bronze_database: str
     silver_database: str
@@ -85,6 +88,9 @@ class Settings:
             db_port=_positive_integer("ETL_DB_PORT", 3306),
             db_username=username,
             db_password=os.getenv("ETL_DB_PASSWORD", ""),
+            db_connect_timeout=_positive_integer("ETL_DB_CONNECT_TIMEOUT", 15),
+            db_read_timeout=_positive_integer("ETL_DB_READ_TIMEOUT", 600),
+            db_write_timeout=_positive_integer("ETL_DB_WRITE_TIMEOUT", 600),
             control_database=_database_identifier("ETL_CONTROL_DATABASE", "kp_control"),
             bronze_database=_database_identifier("ETL_BRONZE_DATABASE", "kp_bronze"),
             silver_database=_database_identifier("ETL_SILVER_DATABASE", "kp_silver"),

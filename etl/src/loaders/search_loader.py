@@ -14,6 +14,7 @@ from ..domain.errors import (
     BatchStateError,
     EtlError,
     FileSecurityError,
+    SearchRecoveryError,
     StructuralFileError,
 )
 from ..domain.models import (
@@ -34,6 +35,9 @@ from ..profiles.search.correos import EMAIL_FIELDS, CorreosV1Normalizer
 from ..profiles.search.direcciones import ADDRESS_FIELDS, DireccionesV1Normalizer
 from ..profiles.search.vehiculos import VEHICLE_FIELDS, VehiculosV1Normalizer
 from ..profiles.search.propiedades import PROPERTY_FIELDS, PropiedadesV1Normalizer
+from ..profiles.search.sbs_resumen import SBS_SUMMARY_FIELDS, SbsResumenV1Normalizer
+from ..profiles.search.sbs_detalle import SBS_DETAIL_FIELDS, SbsDetalleV1Normalizer
+from ..profiles.search.laboral_essalud import ESSALUD_FIELDS, LaboralEssaludV1Normalizer
 from .pagos_loader import ProcessingResult
 
 LOGGER = logging.getLogger("kpdm.etl.search")
@@ -57,6 +61,7 @@ class SearchLoader:
         if batch is None:
             raise BatchNotFoundError(f"No existe el batch #{batch_id}.")
         self._validate_batch(batch)
+        stage = "search_ingestion"
         try:
             source_path = self._validated_source_path(batch)
         except EtlError as exception:
@@ -77,6 +82,7 @@ class SearchLoader:
             if stats.error_rows:
                 self.database.finish_search_with_errors(batch_id, self.clock(), stats)
                 return ProcessingResult(batch_id, "COMPLETADO_CON_ERRORES", stats)
+            stage = "search_gold_publish"
             self.database.publish_search(batch, self.clock(), stats)
             return ProcessingResult(batch_id, "COMPLETADO", stats)
         except Exception as exception:
@@ -84,10 +90,76 @@ class SearchLoader:
                 f"Error fatal durante el procesamiento SEARCH: {type(exception).__name__}."
             )
             self.database.fail_batch(batch_id, self.clock(), message, stats)
-            LOGGER.exception("search_batch_failed", extra={"context": {"batch_id": batch_id}})
+            LOGGER.error(
+                "search_batch_failed",
+                extra={
+                    "context": {
+                        "batch_id": batch_id,
+                        "stage": stage,
+                        "error_type": type(exception).__name__,
+                        "error_code": self._safe_error_code(exception),
+                    }
+                },
+            )
             if isinstance(exception, EtlError):
                 raise
             raise StructuralFileError(message) from exception
+
+    def recover_publish(self, batch_id: int) -> ProcessingResult:
+        batch = self.database.get_batch(batch_id)
+        if batch is None:
+            raise BatchNotFoundError(f"No existe el batch #{batch_id}.")
+        self._validate_recovery_batch(batch)
+
+        stage = "recovery_preflight"
+        stats = ProcessingStats()
+        LOGGER.info("recovery_started", extra={"context": {"batch_id": batch_id}})
+        try:
+            stats = self.database.preflight_search_recovery(batch)
+            LOGGER.info(
+                "recovery_preflight_ok",
+                extra={"context": {"batch_id": batch_id}},
+            )
+            stage = "search_gold_publish"
+            LOGGER.info(
+                "search_gold_publish_started",
+                extra={"context": {"batch_id": batch_id}},
+            )
+            self.database.publish_search(batch, self.clock(), stats, recovery=True)
+            LOGGER.info(
+                "search_gold_publish_completed",
+                extra={"context": {"batch_id": batch_id}},
+            )
+            LOGGER.info("recovery_completed", extra={"context": {"batch_id": batch_id}})
+
+            return ProcessingResult(batch_id, "COMPLETADO", stats)
+        except Exception as exception:
+            try:
+                self.database.mark_search_recovery_failed(batch_id, self.clock())
+            except Exception as failure_mark_exception:
+                LOGGER.error(
+                    "search_recovery_failure_mark_failed",
+                    extra={
+                        "context": {
+                            "batch_id": batch_id,
+                            "stage": stage,
+                            "error_type": type(failure_mark_exception).__name__,
+                            "error_code": self._safe_error_code(failure_mark_exception),
+                        }
+                    },
+                )
+            LOGGER.error(
+                "search_recovery_failed",
+                extra={
+                    "context": {
+                        "batch_id": batch_id,
+                        "stage": stage,
+                        "error_type": type(exception).__name__,
+                        "error_code": self._safe_error_code(exception),
+                    }
+                },
+            )
+            raise SearchRecoveryError(stage, exception) from exception
 
     def _consume_rows(
         self,
@@ -181,7 +253,7 @@ class SearchLoader:
         record: SearchNormalizedRecord,
         batch: BatchRecord,
     ) -> None:
-        if batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}:
+        if batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD"}:
             chunk.duplicate_rows += 1
             return
         is_phone = len(record.deduplication_key) == 2
@@ -209,7 +281,7 @@ class SearchLoader:
         conflicts: dict[tuple[str, str], tuple[object, ...]],
         created_at: datetime,
     ) -> RowError | None:
-        if batch.dataset_code not in {"VEHICULOS", "PROPIEDADES"}:
+        if batch.dataset_code not in {"VEHICULOS", "PROPIEDADES", "SBS_RESUMEN"}:
             return None
         key = getattr(record, "conflict_key", None)
         if key is None:
@@ -218,8 +290,13 @@ class SearchLoader:
         previous = conflicts.setdefault(key, signature)
         if previous == signature:
             return None
-        message = "VEHICLE_PLATE_CONFLICT" if batch.dataset_code == "VEHICULOS" else "PROPERTY_CONFLICT"
-        return RowError(batch.batch_id, record.source_row, "placa" if batch.dataset_code == "VEHICULOS" else "partida_registral", key[1], message, created_at)
+        messages = {
+            "VEHICULOS": ("placa", "VEHICLE_PLATE_CONFLICT"),
+            "PROPIEDADES": ("partida_registral", "PROPERTY_CONFLICT"),
+            "SBS_RESUMEN": ("cod_sbs", "SBS_SUMMARY_CONFLICT"),
+        }
+        field, message = messages[batch.dataset_code]
+        return RowError(batch.batch_id, record.source_row, field, "|".join(key), message, created_at)
 
     @staticmethod
     def _validate_batch(batch: BatchRecord) -> None:
@@ -229,13 +306,37 @@ class SearchLoader:
             )
         if (
             batch.tipo != "SEARCH"
-            or batch.dataset_code not in {"PERSONAS", "TELEFONOS", "CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}
+            or batch.dataset_code not in {"PERSONAS", "TELEFONOS", "CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD"}
             or batch.source_code is None
             or batch.mapping_version is None
             or batch.perfil_version != "1"
             or batch.refresh_mode not in {"FULL_REPLACE", "SCOPE_REPLACE"}
         ):
             raise StructuralFileError("El batch no corresponde a un perfil SEARCH v1 publicable.")
+
+    @staticmethod
+    def _validate_recovery_batch(batch: BatchRecord) -> None:
+        if batch.estado not in {"PROCESANDO", "ERROR"}:
+            raise BatchStateError(
+                f"El batch #{batch.batch_id} está en {batch.estado}; no es recuperable."
+            )
+        if (
+            batch.tipo != "SEARCH"
+            or batch.dataset_code not in {
+                "PERSONAS", "TELEFONOS", "CORREOS", "DIRECCIONES", "VEHICULOS",
+                "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD",
+            }
+            or batch.source_code is None
+            or batch.refresh_mode not in {"FULL_REPLACE", "SCOPE_REPLACE"}
+        ):
+            raise StructuralFileError("El batch no corresponde a una recuperación SEARCH publicable.")
+
+    @staticmethod
+    def _safe_error_code(exception: Exception) -> int | None:
+        for value in getattr(exception, "args", ()):
+            if isinstance(value, int):
+                return value
+        return None
 
     def _profile(self, batch: BatchRecord):
         if batch.dataset_code == "PERSONAS":
@@ -250,6 +351,12 @@ class SearchLoader:
             return VEHICLE_FIELDS, VehiculosV1Normalizer(self.settings.error_value_max_length)
         if batch.dataset_code == "PROPIEDADES":
             return PROPERTY_FIELDS, PropiedadesV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "SBS_RESUMEN":
+            return SBS_SUMMARY_FIELDS, SbsResumenV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "SBS_DETALLE":
+            return SBS_DETAIL_FIELDS, SbsDetalleV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "LABORAL_ESSALUD":
+            return ESSALUD_FIELDS, LaboralEssaludV1Normalizer(self.settings.error_value_max_length)
         raise StructuralFileError("Dataset SEARCH no soportado.")
 
     def _validated_source_path(self, batch: BatchRecord) -> Path:

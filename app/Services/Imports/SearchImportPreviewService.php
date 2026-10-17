@@ -21,6 +21,7 @@ final class SearchImportPreviewService
         private readonly SearchSpreadsheetPreviewReader $reader,
         private readonly SearchPhonePreviewAnalyzer $phoneAnalyzer,
         private readonly SearchAssociatedPreviewAnalyzer $associatedAnalyzer,
+        private readonly SearchFinancialPreviewAnalyzer $financialAnalyzer,
         private readonly SearchImportDefinitionRegistry $definitions,
         private readonly SearchDatasetCatalogService $datasets,
         private readonly SearchSourceCatalogService $sources,
@@ -145,6 +146,10 @@ final class SearchImportPreviewService
             );
         }
 
+        if (in_array($dataset, [DatasetCode::SbsResumen, DatasetCode::SbsDetalle, DatasetCode::LaboralEssalud], true)) {
+            return $this->financialAnalyzer->writeErrors($dataset, $this->files->disk()->path($preview->storedPath), $preview->metadata->extension, $preview->suggestedMapping, $writeError);
+        }
+
         return $this->associatedAnalyzer->writeErrors(
             $dataset,
             $this->files->disk()->path($preview->storedPath),
@@ -192,6 +197,10 @@ final class SearchImportPreviewService
     ): array {
         if ($dataset === DatasetCode::Telefonos) {
             return $this->phoneAnalyzer->analyze($path, $extension, $mapping, $previewLimit, $errorLimit);
+        }
+
+        if (in_array($dataset, [DatasetCode::SbsResumen, DatasetCode::SbsDetalle, DatasetCode::LaboralEssalud], true)) {
+            return $this->financialAnalyzer->analyze($dataset, $path, $extension, $mapping, $previewLimit, $errorLimit);
         }
 
         return $this->associatedAnalyzer->analyze($dataset, $path, $extension, $mapping, $previewLimit, $errorLimit);

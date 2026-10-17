@@ -137,6 +137,10 @@ class FakeSearchDatabase(FakeDatabase):
         self.record_keys: set[tuple[str, ...]] = set()
         self.published = False
         self.search_error_finished = False
+        self.recovery_stats: ProcessingStats | None = None
+        self.recovery_preflight_calls = 0
+        self.recovery_publish_calls = 0
+        self.recovery_failure_marked = False
         self.mapping = [
             {
                 "source_position": position,
@@ -205,14 +209,27 @@ class FakeSearchDatabase(FakeDatabase):
         self.finished_status = "COMPLETADO_CON_ERRORES"
         self.final_stats = copy_stats(stats)
 
+    def preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats:
+        self.recovery_preflight_calls += 1
+        if self.recovery_stats is None:
+            raise RuntimeError("missing recovery preflight")
+        return copy_stats(self.recovery_stats)
+
+    def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None:
+        self.recovery_failure_marked = True
+
     def publish_search(
         self,
         batch: BatchRecord,
         published_at: datetime,
         stats: ProcessingStats,
+        *,
+        recovery: bool = False,
     ) -> None:
         if self.fail_publish:
             raise RuntimeError("simulated publication rollback")
+        if recovery:
+            self.recovery_publish_calls += 1
         self.published = True
         self.finished_status = "COMPLETADO"
         self.final_stats = copy_stats(stats)
@@ -235,6 +252,9 @@ def settings(tmp_path: Path) -> Settings:
         db_port=3306,
         db_username="kp_data_manager_etl",
         db_password="test-only",
+        db_connect_timeout=15,
+        db_read_timeout=600,
+        db_write_timeout=600,
         control_database="kp_control_test",
         bronze_database="kp_bronze_test",
         silver_database="kp_silver_test",

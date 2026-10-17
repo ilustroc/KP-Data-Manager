@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from src.domain.errors import StructuralFileError
+from src.domain.errors import BatchStateError, SearchRecoveryError, StructuralFileError
+from src.domain.models import ProcessingStats
 from src.loaders.search_loader import SearchLoader
 
 from .conftest import FakeSearchDatabase, make_batch, stage_file
@@ -12,6 +13,7 @@ from .conftest import FakeSearchDatabase, make_batch, stage_file
 
 HEADER = "DOCUMENTO,PATERNO,MATERNO,NOMBRES,NACIMIENTO,DIRECCION,SEXO,ESTADO CIVIL,PADRE,MADRE\n"
 ADDRESS_HEADER = "DOCUMENTO,DIRECCION,DEPARTAMENTO,PROVINCIA,DISTRITO,DATA PROCEDENCIA\n"
+SBS_SUMMARY_HEADER = "COD_SBS,FECHA_REPORTE_SBS,DOCUMENTO,CANTIDAD_EMPRESAS,CALIFICACION_NORMAL,CALIFICACION_CPP,CALIFICACION_DEFICIENTE,CALIFICACION_DUDOSO,CALIFICACION_PERDIDAD\n"
 
 
 def personas_batch(relative_path: str, sha256: str, refresh_mode: str = "FULL_REPLACE"):
@@ -42,6 +44,10 @@ def addresses_batch(relative_path: str, sha256: str):
         original_name="direcciones.csv",
         sha256=sha256,
     )
+
+
+def sbs_summary_batch(relative_path: str, sha256: str):
+    return make_batch(tipo="SEARCH", perfil_version="1", dataset_code="SBS_RESUMEN", source_code="BASE_SBS", refresh_mode="FULL_REPLACE", mapping_version=1, relative_path=relative_path, extension="csv", original_name="sbs.csv", sha256=sha256)
 
 
 def write_csv(tmp_path: Path, body: str) -> Path:
@@ -159,3 +165,137 @@ def test_empty_address_remains_in_scope_without_silver_record_and_publishes_scop
     assert len(database.raw_records) == 1
     assert database.scope == {"80686913"}
     assert database.published is True
+
+
+def test_sbs_summary_uses_generic_bronze_scope_and_publication_pipeline(settings, tmp_path):
+    source = tmp_path / "sbs.csv"
+    source.write_text(SBS_SUMMARY_HEADER + "0012345678,202607,00002549,1,100,0,0,0,0\n", encoding="utf-8")
+    _, sha256 = stage_file(settings, source, "2026/10/123/sbs.csv")
+    database = FakeSearchDatabase(sbs_summary_batch("2026/10/123/sbs.csv", sha256))
+    database.mapping = [
+        {"source_position": position, "source_column": source_name, "target_column": target, "is_required": target in {"documento", "cod_sbs", "fecha_reporte_sbs"}, "transformation": "SBS_RESUMEN_V1", "default_value": None}
+        for position, (source_name, target) in enumerate((("COD_SBS", "cod_sbs"), ("FECHA_REPORTE_SBS", "fecha_reporte_sbs"), ("DOCUMENTO", "documento"), ("CANTIDAD_EMPRESAS", "cantidad_empresas"), ("CALIFICACION_NORMAL", "calificacion_normal"), ("CALIFICACION_CPP", "calificacion_cpp"), ("CALIFICACION_DEFICIENTE", "calificacion_deficiente"), ("CALIFICACION_DUDOSO", "calificacion_dudoso"), ("CALIFICACION_PERDIDAD", "calificacion_perdida")), start=1)
+    ]
+
+    result = SearchLoader(database, settings).process(123)
+
+    assert result.status == "COMPLETADO"
+    assert result.stats.inserted_rows == 1
+    assert len(database.raw_records) == 1
+    assert database.scope == {"00002549"}
+    assert database.published is True
+
+
+def test_sbs_summary_conflict_blocks_publication_without_losing_bronze(settings, tmp_path):
+    source = tmp_path / "sbs-conflict.csv"
+    source.write_text(SBS_SUMMARY_HEADER + "0012345678,202607,00002549,1,100,0,0,0,0\n0012345678,202607,00002549,1,99,1,0,0,0\n", encoding="utf-8")
+    _, sha256 = stage_file(settings, source, "2026/10/123/sbs-conflict.csv")
+    database = FakeSearchDatabase(sbs_summary_batch("2026/10/123/sbs-conflict.csv", sha256))
+    database.mapping = [
+        {"source_position": position, "source_column": source_name, "target_column": target, "is_required": target in {"documento", "cod_sbs", "fecha_reporte_sbs"}, "transformation": "SBS_RESUMEN_V1", "default_value": None}
+        for position, (source_name, target) in enumerate((("COD_SBS", "cod_sbs"), ("FECHA_REPORTE_SBS", "fecha_reporte_sbs"), ("DOCUMENTO", "documento"), ("CANTIDAD_EMPRESAS", "cantidad_empresas"), ("CALIFICACION_NORMAL", "calificacion_normal"), ("CALIFICACION_CPP", "calificacion_cpp"), ("CALIFICACION_DEFICIENTE", "calificacion_deficiente"), ("CALIFICACION_DUDOSO", "calificacion_dudoso"), ("CALIFICACION_PERDIDAD", "calificacion_perdida")), start=1)
+    ]
+
+    result = SearchLoader(database, settings).process(123)
+
+    assert result.status == "COMPLETADO_CON_ERRORES"
+    assert len(database.raw_records) == 2
+    assert result.stats.error_rows == 1
+    assert database.published is False
+
+
+@pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "SCOPE_REPLACE"])
+def test_recovery_publishes_only_without_changing_historical_rows(settings, refresh_mode):
+    batch = make_batch(
+        tipo="SEARCH",
+        status="PROCESANDO",
+        perfil_version="1",
+        dataset_code="LABORAL_ESSALUD",
+        source_code="BASE_ESSALUD",
+        refresh_mode=refresh_mode,
+        mapping_version=1,
+    )
+    database = FakeSearchDatabase(batch)
+    database.raw_records.append(object())
+    database.persons.append(object())
+    database.scope.add("00002549")
+    database.recovery_stats = ProcessingStats(
+        file_rows=1,
+        inserted_rows=1,
+        error_rows=0,
+        scope_count=1,
+    )
+    before = (len(database.raw_records), len(database.persons), len(database.scope))
+
+    result = SearchLoader(database, settings).recover_publish(123)
+
+    assert result.status == "COMPLETADO"
+    assert database.recovery_preflight_calls == 1
+    assert database.recovery_publish_calls == 1
+    assert (len(database.raw_records), len(database.persons), len(database.scope)) == before
+
+
+def test_recovery_accepts_error_batch_and_propagates_publish_failure_safely(settings):
+    batch = make_batch(
+        tipo="SEARCH",
+        status="ERROR",
+        perfil_version="1",
+        dataset_code="SBS_DETALLE",
+        source_code="BASE_SBS_DETALLE",
+        refresh_mode="FULL_REPLACE",
+        mapping_version=1,
+    )
+    database = FakeSearchDatabase(batch, fail_publish=True)
+    database.recovery_stats = ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1)
+
+    with pytest.raises(SearchRecoveryError, match="No fue posible recuperar"):
+        SearchLoader(database, settings).recover_publish(123)
+
+    assert database.recovery_preflight_calls == 1
+    assert database.recovery_publish_calls == 0
+    assert database.published is False
+    assert database.recovery_failure_marked is True
+
+
+def test_recovery_preserves_preflight_failure_when_marking_error_also_fails(settings):
+    class FailureMarkDatabase(FakeSearchDatabase):
+        def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None:
+            raise RuntimeError("simulated status update failure")
+
+    batch = make_batch(
+        tipo="SEARCH",
+        status="PROCESANDO",
+        perfil_version="1",
+        dataset_code="LABORAL_ESSALUD",
+        source_code="BASE_ESSALUD",
+        refresh_mode="FULL_REPLACE",
+        mapping_version=1,
+    )
+    database = FailureMarkDatabase(batch)
+
+    with pytest.raises(SearchRecoveryError) as exception:
+        SearchLoader(database, settings).recover_publish(123)
+
+    assert exception.value.stage == "recovery_preflight"
+    assert isinstance(exception.value.cause, RuntimeError)
+    assert str(exception.value.cause) == "missing recovery preflight"
+
+
+@pytest.mark.parametrize("status", ["PENDIENTE", "COMPLETADO", "COMPLETADO_CON_ERRORES"])
+def test_recovery_rejects_non_recoverable_batch_states(settings, status):
+    batch = make_batch(
+        tipo="SEARCH",
+        status=status,
+        perfil_version="1",
+        dataset_code="SBS_DETALLE",
+        source_code="BASE_SBS_DETALLE",
+        refresh_mode="FULL_REPLACE",
+        mapping_version=1,
+    )
+    database = FakeSearchDatabase(batch)
+
+    with pytest.raises(BatchStateError):
+        SearchLoader(database, settings).recover_publish(123)
+
+    assert database.recovery_preflight_calls == 0
+    assert database.recovery_publish_calls == 0

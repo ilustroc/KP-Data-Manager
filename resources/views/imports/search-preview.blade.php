@@ -19,12 +19,20 @@
                         'Válidas' => $preview->analysis->validRows,
                         'Con error' => $preview->analysis->invalidRows,
                         'Documentos' => $preview->analysis->uniqueDocuments,
-                        ($preview->datasetCode === 'TELEFONOS' ? 'Teléfonos' : 'Registros únicos') => $preview->datasetCode === 'TELEFONOS' ? $preview->analysis->uniquePhones : ($preview->analysis->metrics['unique_emails'] ?? $preview->analysis->metrics['addresses'] ?? $preview->analysis->metrics['vehicles'] ?? $preview->analysis->metrics['properties'] ?? 0),
+                        ($preview->datasetCode === 'TELEFONOS' ? 'Teléfonos' : 'Registros únicos') => $preview->datasetCode === 'TELEFONOS' ? $preview->analysis->uniquePhones : ($preview->analysis->metrics['unique_emails'] ?? $preview->analysis->metrics['addresses'] ?? $preview->analysis->metrics['vehicles'] ?? $preview->analysis->metrics['properties'] ?? $preview->analysis->metrics['unique_records'] ?? 0),
                         'Duplicados' => $preview->datasetCode === 'TELEFONOS' ? $preview->analysis->duplicateDocumentPhones : ($preview->analysis->metrics['duplicates_exact'] ?? 0),
                     ] as $label => $value)
                         <div class="bg-white p-3"><span class="kp-label">{{ $label }}</span><p class="text-xl font-semibold">{{ number_format($value) }}</p></div>
                     @endforeach
                 </div>
+                @if (in_array($preview->datasetCode, ['SBS_RESUMEN', 'SBS_DETALLE', 'LABORAL_ESSALUD'], true))
+                    <div class="grid gap-px border-t border-border bg-border sm:grid-cols-3">
+                        <div class="bg-white p-3"><span class="kp-label">Periodos</span><p class="text-xl font-semibold">{{ number_format($preview->analysis->metrics['periods'] ?? 0) }}</p></div>
+                        @if ($preview->datasetCode === 'SBS_DETALLE')
+                            <div class="bg-white p-3"><span class="kp-label">Filas desplazadas recuperadas</span><p class="text-xl font-semibold">{{ number_format($preview->analysis->metrics['shifted_recovered'] ?? 0) }}</p></div>
+                        @endif
+                    </div>
+                @endif
                 <div class="border-t border-border px-4 py-3 text-sm font-semibold {{ $preview->analysis->isReady() ? 'text-emerald-700' : 'text-red-700' }}">
                     {{ $preview->analysis->isReady() ? '✓ Archivo listo para procesar' : '✕ Archivo no apto para procesar' }}
                 </div>

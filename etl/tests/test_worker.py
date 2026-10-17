@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+import logging
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from src.domain.errors import (
 )
 from src.domain.models import CellValue, SourceRow
 from src.loaders.pagos_loader import PaymentLoader
+from src.worker import JsonFormatter, safe_diagnostic
+import pymysql
 
 from .conftest import FakeDatabase, make_batch, stage_file
 
@@ -215,3 +218,52 @@ def test_large_iterator_is_consumed_in_bounded_chunks(settings, tmp_path: Path) 
     assert result.stats.file_rows == 10001
     assert database.chunk_sizes == [(5000, 0), (5000, 0), (1, 0)]
     assert [progress.file_rows for progress in database.progress] == [5000, 10000, 10001]
+
+
+def test_worker_json_formatter_never_serializes_exception_tracebacks() -> None:
+    record = logging.LogRecord(
+        name="kpdm.etl",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="worker_crashed",
+        args=(),
+        exc_info=(RuntimeError, RuntimeError("PASSWORD=secret"), None),
+    )
+
+    payload = JsonFormatter().format(record)
+
+    assert '"event": "worker_crashed"' in payload
+    assert "PASSWORD=secret" not in payload
+    assert "exception" not in payload
+
+
+def test_interface_error_diagnostic_preserves_zero_code_and_hides_driver_message() -> None:
+    class Database:
+        connection_phase = "execute"
+
+    diagnostic = safe_diagnostic(pymysql.err.InterfaceError(0, "PASSWORD=secret"), Database())
+
+    assert diagnostic == {
+        "error_code": 0,
+        "db_driver": "pymysql",
+        "connection_phase": "execute",
+        "retryable": True,
+    }
+
+
+def test_operational_error_2013_is_retryable_without_exposing_the_driver_message() -> None:
+    class Database:
+        connection_phase = "execute"
+
+    diagnostic = safe_diagnostic(
+        pymysql.err.OperationalError(2013, "sensitive driver message"),
+        Database(),
+    )
+
+    assert diagnostic == {
+        "error_code": 2013,
+        "db_driver": "pymysql",
+        "connection_phase": "execute",
+        "retryable": True,
+    }

@@ -46,7 +46,7 @@ return [
         'preview_rows' => 20,
         'preview_error_limit' => 100,
         'preview_ttl_minutes' => 30,
-        'available_datasets' => ['PERSONAS', 'TELEFONOS', 'CORREOS', 'DIRECCIONES', 'VEHICULOS', 'PROPIEDADES'],
+        'available_datasets' => ['PERSONAS', 'TELEFONOS', 'CORREOS', 'DIRECCIONES', 'VEHICULOS', 'PROPIEDADES', 'SBS_RESUMEN', 'SBS_DETALLE', 'LABORAL_ESSALUD'],
         'provisional_source_codes' => [
             'PERSONAS' => 'BASE_PERSONAS',
             'TELEFONOS' => 'BASE_TELEFONOS',
@@ -54,6 +54,9 @@ return [
             'DIRECCIONES' => 'BASE_DIRECCIONES',
             'VEHICULOS' => 'BASE_VEHICULOS',
             'PROPIEDADES' => 'BASE_SUNARP',
+            'SBS_RESUMEN' => 'BASE_SBS',
+            'SBS_DETALLE' => 'BASE_SBS_DETALLE',
+            'LABORAL_ESSALUD' => 'BASE_ESSALUD',
         ],
         'scope_insert_chunk_size' => 1000,
         'tables' => [

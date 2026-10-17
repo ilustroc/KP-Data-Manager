@@ -30,6 +30,9 @@ from .domain.models import (
     SearchAddressRecord,
     SearchVehicleRecord,
     SearchPropertyRecord,
+    SearchSbsSummaryRecord,
+    SearchSbsDetailRecord,
+    SearchEssaludRecord,
     SearchRawRecord,
     WandooPortfolioRecord,
 )
@@ -38,6 +41,9 @@ from .domain.models import (
 class MySqlDatabase:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.connection_phase = "connect"
+        self._transaction_active = False
+        self.last_cleanup_error_type: str | None = None
         self.connection: Connection = pymysql.connect(
             host=settings.db_host,
             port=settings.db_port,
@@ -47,14 +53,21 @@ class MySqlDatabase:
             charset="utf8mb4",
             autocommit=True,
             cursorclass=DictCursor,
-            connect_timeout=15,
-            read_timeout=120,
-            write_timeout=120,
+            connect_timeout=settings.db_connect_timeout,
+            read_timeout=settings.db_read_timeout,
+            write_timeout=settings.db_write_timeout,
         )
-        with self.connection.cursor() as cursor:
-            cursor.execute("SET time_zone = '+00:00'")
+        try:
+            self.connection_phase = "session_setup"
+            with self.connection.cursor() as cursor:
+                cursor.execute("SET time_zone = '+00:00'")
+        except Exception:
+            self.close()
+            raise
+        self.connection_phase = "ready"
 
     def get_batch(self, batch_id: int) -> BatchRecord | None:
+        self.connection_phase = "execute"
         sql = f"""
             SELECT batch_id, tipo, entidad, perfil_version, dataset_code, source_code,
                    refresh_mode, mapping_version, estado, archivo, archivo_original,
@@ -124,16 +137,16 @@ class MySqlDatabase:
             VALUES (%s, %s, %s, %s, %s, %s)
         """
 
-        self.connection.begin()
+        self._begin_transaction()
         try:
             with self.connection.cursor() as cursor:
                 if payments:
                     cursor.executemany(payment_sql, [payment.as_insert_tuple() for payment in payments])
                 if errors:
                     cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
-            self.connection.commit()
+            self._commit_transaction()
         except Exception:
-            self.connection.rollback()
+            self._rollback_transaction_safely()
             raise
 
     def update_progress(self, batch_id: int, stats: ProcessingStats) -> None:
@@ -210,12 +223,15 @@ class MySqlDatabase:
                 batch.batch_id,
                 *(value for record in records for value in record.deduplication_key),
             )
-        elif batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}:
+        elif batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD"}:
             tables = {
                 "CORREOS": "search_correos",
                 "DIRECCIONES": "search_direcciones",
                 "VEHICULOS": "search_vehiculos",
                 "PROPIEDADES": "search_propiedades",
+                "SBS_RESUMEN": "search_sbs_resumen",
+                "SBS_DETALLE": "search_sbs_detalle",
+                "LABORAL_ESSALUD": "search_laboral_essalud",
             }
             hashes = [record.record_hash for record in records]
             placeholders = ", ".join(["%s"] * len(hashes))
@@ -231,7 +247,7 @@ class MySqlDatabase:
             cursor.execute(sql, values)
             if batch.dataset_code == "PERSONAS":
                 return {(str(row["documento"]),) for row in cursor.fetchall()}
-            if batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES"}:
+            if batch.dataset_code in {"CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD"}:
                 return {(str(row["record_hash"]),) for row in cursor.fetchall()}
             return {
                 (str(row["documento"]), str(row["telefono"])) for row in cursor.fetchall()
@@ -292,6 +308,27 @@ class MySqlDatabase:
                  `source_code`, `batch_id`, `source_raw_id`, `record_hash`, `created_at`)
             VALUES ({", ".join(["%s"] * 9)})
         """
+        summary_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_sbs_resumen`
+                (`documento`, `cod_sbs`, `fecha_reporte_sbs`, `cantidad_empresas`,
+                 `calificacion_normal`, `calificacion_cpp`, `calificacion_deficiente`,
+                 `calificacion_dudoso`, `calificacion_perdida`, `source_code`, `batch_id`,
+                 `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 14)})
+        """
+        detail_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_sbs_detalle`
+                (`fecha_reporte_sbs`, `documento`, `cod_sbs`, `entidad`, `tipo_credito`,
+                 `condicion`, `monto`, `dias_atraso`, `source_code`, `batch_id`,
+                 `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 13)})
+        """
+        essalud_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_laboral_essalud`
+                (`documento`, `periodo`, `ruc`, `nombre_empresa`, `sueldo`, `situacion`,
+                 `source_code`, `batch_id`, `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 11)})
+        """
         scope_sql = f"""
             INSERT INTO `{self.settings.control_database}`.`import_scope_document`
                 (`batch_id`, `documento`, `created_at`)
@@ -302,7 +339,7 @@ class MySqlDatabase:
                 (`batch_id`, `numero_fila`, `campo`, `valor`, `error`, `created_at`)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
-        self.connection.begin()
+        self._begin_transaction()
         inserted_scope_documents = 0
         try:
             with self.connection.cursor() as cursor:
@@ -336,6 +373,12 @@ class MySqlDatabase:
                         silver_sql = vehicle_sql
                     elif record_type is SearchPropertyRecord:
                         silver_sql = property_sql
+                    elif record_type is SearchSbsSummaryRecord:
+                        silver_sql = summary_sql
+                    elif record_type is SearchSbsDetailRecord:
+                        silver_sql = detail_sql
+                    elif record_type is SearchEssaludRecord:
+                        silver_sql = essalud_sql
                     else:
                         raise RuntimeError("Tipo de registro SEARCH no soportado.")
                     cursor.executemany(
@@ -388,10 +431,10 @@ class MySqlDatabase:
                         inserted_scope_documents = len(new_documents)
                 if errors:
                     cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
-            self.connection.commit()
+            self._commit_transaction()
             return inserted_scope_documents
         except Exception:
-            self.connection.rollback()
+            self._rollback_transaction_safely()
             raise
 
     def finish_search_with_errors(
@@ -425,11 +468,119 @@ class MySqlDatabase:
                 ),
             )
 
+    def preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats:
+        self.connection_phase = "execute"
+        if batch.source_code is None or batch.dataset_code is None:
+            raise RuntimeError("El batch SEARCH no tiene contexto de recuperación completo.")
+        tables = {
+            "PERSONAS": "search_personas",
+            "TELEFONOS": "search_telefonos",
+            "CORREOS": "search_correos",
+            "DIRECCIONES": "search_direcciones",
+            "VEHICULOS": "search_vehiculos",
+            "PROPIEDADES": "search_propiedades",
+            "SBS_RESUMEN": "search_sbs_resumen",
+            "SBS_DETALLE": "search_sbs_detalle",
+            "LABORAL_ESSALUD": "search_laboral_essalud",
+        }
+        silver_table = tables.get(batch.dataset_code)
+        if silver_table is None:
+            raise RuntimeError("El dataset SEARCH no admite recuperación.")
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                    SELECT estado, filas_archivo, filas_duplicadas, rows_valid, rows_invalid,
+                           scope_count
+                    FROM `{self.settings.control_database}`.`import_batch`
+                    WHERE batch_id = %s
+                    LIMIT 1
+                """,
+                (batch.batch_id,),
+            )
+            persisted = cursor.fetchone()
+            if persisted is None or persisted["estado"] not in {"PROCESANDO", "ERROR"}:
+                raise RuntimeError("El estado actual del batch no permite recuperación.")
+            if int(persisted["rows_invalid"] or 0) != 0:
+                raise RuntimeError("El batch SEARCH contiene filas inválidas y no es recuperable.")
+
+            cursor.execute(
+                f"SELECT COUNT(*) AS total FROM `{self.settings.bronze_database}`.`search_raw_row` WHERE batch_id = %s AND dataset_code = %s",
+                (batch.batch_id, batch.dataset_code),
+            )
+            bronze_count = int(cursor.fetchone()["total"])
+            cursor.execute(
+                f"SELECT COUNT(*) AS total FROM `{self.settings.silver_database}`.`{silver_table}` WHERE batch_id = %s",
+                (batch.batch_id,),
+            )
+            silver_count = int(cursor.fetchone()["total"])
+            cursor.execute(
+                f"SELECT COUNT(*) AS total FROM `{self.settings.control_database}`.`import_scope_document` WHERE batch_id = %s",
+                (batch.batch_id,),
+            )
+            scope_count = int(cursor.fetchone()["total"])
+            cursor.execute(
+                f"""
+                    SELECT dataset_source.source_code, dataset_source.allows_full_replace,
+                           dataset_source.allows_scope_replace
+                    FROM `{self.settings.control_database}`.`import_dataset_source` AS dataset_source
+                    INNER JOIN `{self.settings.control_database}`.`import_source` AS source
+                        ON source.source_code = dataset_source.source_code
+                    WHERE dataset_source.dataset_code = %s
+                      AND dataset_source.source_code = %s
+                      AND dataset_source.is_active = 1
+                      AND source.is_active = 1
+                    LIMIT 1
+                """,
+                (batch.dataset_code, batch.source_code),
+            )
+            source = cursor.fetchone()
+
+        expected_file_rows = int(persisted["filas_archivo"] or 0)
+        expected_valid_rows = int(persisted["rows_valid"] or 0)
+        expected_scope_count = int(persisted["scope_count"] or 0)
+        if bronze_count != expected_file_rows:
+            raise RuntimeError("Bronze no coincide con las filas persistidas del batch SEARCH.")
+        if silver_count != expected_valid_rows:
+            raise RuntimeError("Silver no coincide con las filas válidas persistidas del batch SEARCH.")
+        if scope_count != expected_scope_count:
+            raise RuntimeError("El scope no coincide con el batch SEARCH.")
+        if source is None:
+            raise RuntimeError("La fuente SEARCH no está activa ni autorizada.")
+        permission_column = (
+            "allows_full_replace"
+            if batch.refresh_mode == "FULL_REPLACE"
+            else "allows_scope_replace"
+        )
+        if int(source[permission_column]) != 1:
+            raise RuntimeError("El modo de actualización SEARCH no está autorizado.")
+
+        return ProcessingStats(
+            file_rows=expected_file_rows,
+            inserted_rows=expected_valid_rows,
+            error_rows=0,
+            duplicate_rows=int(persisted["filas_duplicadas"] or 0),
+            scope_count=expected_scope_count,
+        )
+
+    def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None:
+        self.connection_phase = "execute"
+        sql = f"""
+            UPDATE `{self.settings.control_database}`.`import_batch`
+            SET estado = 'ERROR', fecha_fin = %s,
+                mensaje_error = 'No fue posible recuperar la publicación Gold SEARCH. Revisa el log técnico.'
+            WHERE batch_id = %s AND estado = 'PROCESANDO'
+        """
+        with self.connection.cursor() as cursor:
+            cursor.execute(sql, (finished_at, batch_id))
+
     def publish_search(
         self,
         batch: BatchRecord,
         published_at: datetime,
         stats: ProcessingStats,
+        *,
+        recovery: bool = False,
     ) -> None:
         if batch.source_code is None:
             raise RuntimeError("El publicador SEARCH recibió un batch incompatible.")
@@ -440,13 +591,41 @@ class MySqlDatabase:
             "DIRECCIONES": ("search_direcciones", "address_id", "search_direcciones"),
             "VEHICULOS": ("search_vehiculos", "vehicle_id", "search_vehiculos"),
             "PROPIEDADES": ("search_propiedades", "property_id", "search_propiedades"),
+            "SBS_RESUMEN": ("search_sbs_resumen", "summary_id", "search_sbs_resumen"),
+            "SBS_DETALLE": ("search_sbs_detalle", "detail_id", "search_sbs_detalle"),
+            "LABORAL_ESSALUD": ("search_laboral_essalud", "employment_id", "search_laboral_essalud"),
         }
         if batch.dataset_code not in tables:
             raise RuntimeError("El publicador SEARCH recibió un dataset no soportado.")
         silver_table, silver_id, gold_table = tables[batch.dataset_code]
-        self.connection.begin()
+        self._begin_transaction()
         try:
+            self.connection_phase = "execute"
             with self.connection.cursor() as cursor:
+                self._validate_active_search_source(cursor, batch, lock=False)
+                self._ensure_gold_source_is_compatible(cursor, batch.source_code, gold_table)
+
+                if batch.refresh_mode == "SCOPE_REPLACE":
+                    cursor.execute(
+                        f"""
+                            DELETE gold
+                            FROM `{self.settings.gold_database}`.`{gold_table}` AS gold
+                            INNER JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
+                                ON scope.documento = gold.documento
+                            WHERE scope.batch_id = %s
+                        """,
+                        (batch.batch_id,),
+                    )
+                    self._insert_gold_search(cursor, batch, published_at, upsert=False)
+                elif batch.refresh_mode == "FULL_REPLACE":
+                    self._insert_gold_search(cursor, batch, published_at, upsert=True)
+                    cursor.execute(
+                        f"DELETE FROM `{self.settings.gold_database}`.`{gold_table}` WHERE batch_id <> %s",
+                        (batch.batch_id,),
+                    )
+                else:
+                    raise RuntimeError("Modo de publicación SEARCH no soportado.")
+
                 cursor.execute(
                     f"""
                         SELECT estado, filas_archivo, rows_valid, rows_invalid, scope_count
@@ -456,7 +635,8 @@ class MySqlDatabase:
                     (batch.batch_id,),
                 )
                 locked_batch = cursor.fetchone()
-                if locked_batch is None or locked_batch["estado"] != "PROCESANDO":
+                allowed_states = {"PROCESANDO", "ERROR"} if recovery else {"PROCESANDO"}
+                if locked_batch is None or locked_batch["estado"] not in allowed_states:
                     raise RuntimeError("El batch dejó de estar publicable.")
                 persisted_counters = (
                     int(locked_batch["filas_archivo"] or 0),
@@ -472,52 +652,7 @@ class MySqlDatabase:
                 )
                 if persisted_counters != expected_counters:
                     raise RuntimeError("Los contadores persistidos del batch SEARCH no coinciden.")
-                cursor.execute(
-                    f"""
-                        SELECT dataset_source.source_code,
-                               dataset_source.allows_full_replace,
-                               dataset_source.allows_scope_replace
-                        FROM `{self.settings.control_database}`.`import_dataset_source`
-                            AS dataset_source
-                        INNER JOIN `{self.settings.control_database}`.`import_source` AS source
-                            ON source.source_code = dataset_source.source_code
-                        WHERE dataset_source.dataset_code = %s
-                          AND dataset_source.is_active = 1
-                          AND source.is_active = 1
-                        FOR UPDATE
-                    """,
-                    (batch.dataset_code,),
-                )
-                active_sources = list(cursor.fetchall())
-                if (
-                    len(active_sources) != 1
-                    or str(active_sources[0]["source_code"]) != batch.source_code
-                ):
-                    raise RuntimeError(
-                        "SEARCH Gold exige exactamente una fuente activa y autorizada."
-                    )
-                permission_column = (
-                    "allows_full_replace"
-                    if batch.refresh_mode == "FULL_REPLACE"
-                    else "allows_scope_replace"
-                )
-                if int(active_sources[0][permission_column]) != 1:
-                    raise RuntimeError(
-                        "El modo del batch SEARCH dejó de estar autorizado para la fuente."
-                    )
-                cursor.execute(
-                    f"""
-                        SELECT DISTINCT source_code
-                        FROM `{self.settings.gold_database}`.`{gold_table}`
-                        WHERE source_code <> %s
-                        LIMIT 1
-                    """,
-                    (batch.source_code,),
-                )
-                if cursor.fetchone() is not None:
-                    raise RuntimeError(
-                        "Gold SEARCH contiene otra fuente; no existe una política de precedencia."
-                    )
+                self._validate_active_search_source(cursor, batch, lock=True)
                 cursor.execute(
                     f"SELECT COUNT(*) AS total FROM `{self.settings.silver_database}`.`{silver_table}` WHERE batch_id = %s",
                     (batch.batch_id,),
@@ -566,27 +701,6 @@ class MySqlDatabase:
                 if silver_without_scope or (scope_without_silver and not allows_scope_without_silver):
                     raise RuntimeError("El scope oficial no corresponde exactamente a Silver SEARCH.")
 
-                if batch.refresh_mode == "SCOPE_REPLACE":
-                    cursor.execute(
-                        f"""
-                            DELETE gold
-                            FROM `{self.settings.gold_database}`.`{gold_table}` AS gold
-                            INNER JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
-                                ON scope.documento = gold.documento
-                            WHERE scope.batch_id = %s
-                        """,
-                        (batch.batch_id,),
-                    )
-                    self._insert_gold_search(cursor, batch, published_at, upsert=False)
-                elif batch.refresh_mode == "FULL_REPLACE":
-                    self._insert_gold_search(cursor, batch, published_at, upsert=True)
-                    cursor.execute(
-                        f"DELETE FROM `{self.settings.gold_database}`.`{gold_table}` WHERE batch_id <> %s",
-                        (batch.batch_id,),
-                    )
-                else:
-                    raise RuntimeError("Modo de publicación SEARCH no soportado.")
-
                 cursor.execute(
                     f"SELECT COUNT(*) AS total FROM `{self.settings.gold_database}`.`{gold_table}` WHERE batch_id = %s",
                     (batch.batch_id,),
@@ -602,7 +716,8 @@ class MySqlDatabase:
                             filas_duplicadas = %s, filas_error = %s, rows_valid = %s,
                             rows_invalid = 0, rows_published = %s, scope_count = %s,
                             mensaje_error = NULL
-                        WHERE batch_id = %s AND estado = 'PROCESANDO'
+                        WHERE batch_id = %s
+                          AND estado {"IN ('PROCESANDO', 'ERROR')" if recovery else "= 'PROCESANDO'"}
                     """,
                     (
                         published_at,
@@ -620,10 +735,61 @@ class MySqlDatabase:
                 )
                 if cursor.rowcount != 1:
                     raise RuntimeError("No se pudo confirmar el estado publicado del batch.")
-            self.connection.commit()
+            self._commit_transaction()
         except Exception:
-            self.connection.rollback()
+            self._rollback_transaction_safely()
             raise
+
+    def _validate_active_search_source(
+        self,
+        cursor: DictCursor,
+        batch: BatchRecord,
+        *,
+        lock: bool,
+    ) -> None:
+        lock_clause = " FOR UPDATE" if lock else ""
+        cursor.execute(
+            f"""
+                SELECT dataset_source.source_code,
+                       dataset_source.allows_full_replace,
+                       dataset_source.allows_scope_replace
+                FROM `{self.settings.control_database}`.`import_dataset_source`
+                    AS dataset_source
+                INNER JOIN `{self.settings.control_database}`.`import_source` AS source
+                    ON source.source_code = dataset_source.source_code
+                WHERE dataset_source.dataset_code = %s
+                  AND dataset_source.is_active = 1
+                  AND source.is_active = 1{lock_clause}
+            """,
+            (batch.dataset_code,),
+        )
+        active_sources = list(cursor.fetchall())
+        if len(active_sources) != 1 or str(active_sources[0]["source_code"]) != batch.source_code:
+            raise RuntimeError("SEARCH Gold exige exactamente una fuente activa y autorizada.")
+
+        permission_column = (
+            "allows_full_replace" if batch.refresh_mode == "FULL_REPLACE" else "allows_scope_replace"
+        )
+        if int(active_sources[0][permission_column]) != 1:
+            raise RuntimeError("El modo del batch SEARCH dejó de estar autorizado para la fuente.")
+
+    def _ensure_gold_source_is_compatible(
+        self,
+        cursor: DictCursor,
+        source_code: str,
+        gold_table: str,
+    ) -> None:
+        cursor.execute(
+            f"""
+                SELECT DISTINCT source_code
+                FROM `{self.settings.gold_database}`.`{gold_table}`
+                WHERE source_code <> %s
+                LIMIT 1
+            """,
+            (source_code,),
+        )
+        if cursor.fetchone() is not None:
+            raise RuntimeError("Gold SEARCH contiene otra fuente; no existe una política de precedencia.")
 
     def _insert_gold_search(
         self,
@@ -647,6 +813,15 @@ class MySqlDatabase:
             return
         if batch.dataset_code == "PROPIEDADES":
             self._insert_gold_propiedades(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "SBS_RESUMEN":
+            self._insert_gold_sbs_resumen(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "SBS_DETALLE":
+            self._insert_gold_sbs_detalle(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "LABORAL_ESSALUD":
+            self._insert_gold_essalud(cursor, batch.batch_id, published_at, upsert=upsert)
             return
         if batch.dataset_code != "PERSONAS":
             raise RuntimeError("Dataset SEARCH no soportado para publicación Gold.")
@@ -750,6 +925,24 @@ class MySqlDatabase:
             sql += """ ON DUPLICATE KEY UPDATE partida_registral = VALUES(partida_registral), zona_registral = VALUES(zona_registral), oficina = VALUES(oficina), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at) """
         cursor.execute(sql, (published_at, batch_id))
 
+    def _insert_gold_sbs_resumen(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""INSERT INTO `{self.settings.gold_database}`.`search_sbs_resumen` (`documento`, `cod_sbs`, `fecha_reporte_sbs`, `cantidad_empresas`, `calificacion_normal`, `calificacion_cpp`, `calificacion_deficiente`, `calificacion_dudoso`, `calificacion_perdida`, `source_code`, `batch_id`, `updated_at`) SELECT documento, cod_sbs, fecha_reporte_sbs, cantidad_empresas, calificacion_normal, calificacion_cpp, calificacion_deficiente, calificacion_dudoso, calificacion_perdida, source_code, batch_id, %s FROM `{self.settings.silver_database}`.`search_sbs_resumen` WHERE batch_id = %s"""
+        if upsert:
+            sql += " ON DUPLICATE KEY UPDATE cantidad_empresas = VALUES(cantidad_empresas), calificacion_normal = VALUES(calificacion_normal), calificacion_cpp = VALUES(calificacion_cpp), calificacion_deficiente = VALUES(calificacion_deficiente), calificacion_dudoso = VALUES(calificacion_dudoso), calificacion_perdida = VALUES(calificacion_perdida), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at)"
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_sbs_detalle(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""INSERT INTO `{self.settings.gold_database}`.`search_sbs_detalle` (`fecha_reporte_sbs`, `documento`, `cod_sbs`, `entidad`, `tipo_credito`, `condicion`, `monto`, `dias_atraso`, `record_hash`, `source_code`, `batch_id`, `updated_at`) SELECT fecha_reporte_sbs, documento, cod_sbs, entidad, tipo_credito, condicion, monto, dias_atraso, record_hash, source_code, batch_id, %s FROM `{self.settings.silver_database}`.`search_sbs_detalle` WHERE batch_id = %s"""
+        if upsert:
+            sql += " ON DUPLICATE KEY UPDATE fecha_reporte_sbs = VALUES(fecha_reporte_sbs), cod_sbs = VALUES(cod_sbs), entidad = VALUES(entidad), tipo_credito = VALUES(tipo_credito), condicion = VALUES(condicion), monto = VALUES(monto), dias_atraso = VALUES(dias_atraso), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at)"
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_essalud(self, cursor: DictCursor, batch_id: int, published_at: datetime, *, upsert: bool) -> None:
+        sql = f"""INSERT INTO `{self.settings.gold_database}`.`search_laboral_essalud` (`documento`, `periodo`, `ruc`, `nombre_empresa`, `sueldo`, `situacion`, `record_hash`, `source_code`, `batch_id`, `updated_at`) SELECT documento, periodo, ruc, nombre_empresa, sueldo, situacion, record_hash, source_code, batch_id, %s FROM `{self.settings.silver_database}`.`search_laboral_essalud` WHERE batch_id = %s"""
+        if upsert:
+            sql += " ON DUPLICATE KEY UPDATE periodo = VALUES(periodo), ruc = VALUES(ruc), nombre_empresa = VALUES(nombre_empresa), sueldo = VALUES(sueldo), situacion = VALUES(situacion), source_code = VALUES(source_code), batch_id = VALUES(batch_id), updated_at = VALUES(updated_at)"
+        cursor.execute(sql, (published_at, batch_id))
+
     def insert_cartera_chunk(
         self,
         records: Sequence[PortfolioRecord],
@@ -761,7 +954,7 @@ class MySqlDatabase:
             VALUES (%s, %s, %s, %s, %s, %s)
         """
 
-        self.connection.begin()
+        self._begin_transaction()
         try:
             with self.connection.cursor() as cursor:
                 if records:
@@ -829,9 +1022,9 @@ class MySqlDatabase:
                         raise RuntimeError("Tipo de registro de cartera no soportado.")
                 if errors:
                     cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
-            self.connection.commit()
+            self._commit_transaction()
         except Exception:
-            self.connection.rollback()
+            self._rollback_transaction_safely()
             raise
 
     def _insert_portfolio_records(
@@ -1239,5 +1432,36 @@ class MySqlDatabase:
                 ),
             )
 
-    def close(self) -> None:
-        self.connection.close()
+    def _begin_transaction(self) -> None:
+        self.connection_phase = "transaction_begin"
+        self.connection.begin()
+        self._transaction_active = True
+
+    def _commit_transaction(self) -> None:
+        self.connection_phase = "commit"
+        self.connection.commit()
+        self._transaction_active = False
+
+    def _rollback_transaction_safely(self) -> None:
+        if not getattr(self, "_transaction_active", False):
+            return
+
+        self.connection_phase = "rollback"
+        try:
+            self.connection.rollback()
+        except Exception as exception:
+            self.last_cleanup_error_type = type(exception).__name__
+        finally:
+            self._transaction_active = False
+
+    def close(self) -> bool:
+        self._rollback_transaction_safely()
+        self.connection_phase = "close"
+        try:
+            self.connection.close()
+        except Exception as exception:
+            self.last_cleanup_error_type = type(exception).__name__
+
+            return False
+
+        return True

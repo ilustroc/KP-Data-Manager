@@ -37,6 +37,9 @@ ETL_DB_HOST=127.0.0.1
 ETL_DB_PORT=3306
 ETL_DB_USERNAME=kp_data_manager_etl
 ETL_DB_PASSWORD=
+ETL_DB_CONNECT_TIMEOUT=15
+ETL_DB_READ_TIMEOUT=600
+ETL_DB_WRITE_TIMEOUT=600
 ETL_CONTROL_DATABASE=kp_control
 ETL_BRONZE_DATABASE=kp_bronze
 ETL_SILVER_DATABASE=kp_silver
@@ -47,6 +50,8 @@ ETL_ALLOW_ZERO_AMOUNT=true
 ETL_ERROR_VALUE_MAX_LENGTH=500
 ETL_LOG_LEVEL=INFO
 ```
+
+`ETL_DB_READ_TIMEOUT` y `ETL_DB_WRITE_TIMEOUT` son límites del cliente PyMySQL. En particular, `ETL_DB_READ_TIMEOUT` controla cuánto espera el ETL por la respuesta de una operación MySQL extensa; no modifica `wait_timeout` ni ninguna variable global del servidor MySQL.
 
 El worker rechaza explícitamente `root`, `jesus_admin` y `kp_data_manager_app`. El usuario ETL debe crearse posteriormente con permisos mínimos:
 
