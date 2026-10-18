@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, Mapping, Protocol, Sequence
+
+if TYPE_CHECKING:
+    from ..metrics import SearchMetrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +147,43 @@ class SearchPhoneRecord:
     @property
     def deduplication_key(self) -> tuple[str, ...]:
         return (self.documento, self.telefono)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchFamilyRecord:
+    source_row: int
+    documento: str
+    documento_familiar: str | None
+    paterno_familiar: str | None
+    materno_familiar: str | None
+    nombres_familiar: str | None
+    nacimiento_familiar: str | None
+    tipo_familiar: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (
+            self.documento,
+            self.documento_familiar,
+            self.paterno_familiar,
+            self.materno_familiar,
+            self.nombres_familiar,
+            self.nacimiento_familiar,
+            self.tipo_familiar,
+            self.source_code,
+            self.batch_id,
+            self.source_row,
+            source_raw_id,
+            self.record_hash,
+            self.created_at,
+        )
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (str(self.source_row),)
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,7 +368,7 @@ class SearchEssaludRecord:
         return (self.record_hash,)
 
 
-SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord | SearchEmailRecord | SearchAddressRecord | SearchVehicleRecord | SearchPropertyRecord | SearchSbsSummaryRecord | SearchSbsDetailRecord | SearchEssaludRecord
+SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord | SearchFamilyRecord | SearchEmailRecord | SearchAddressRecord | SearchVehicleRecord | SearchPropertyRecord | SearchSbsSummaryRecord | SearchSbsDetailRecord | SearchEssaludRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -985,7 +1025,12 @@ class CarteraDatabasePort(DatabasePort, Protocol):
 
 
 class SearchDatabasePort(DatabasePort, Protocol):
-    def preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats: ...
+    def preflight_search_recovery(
+        self,
+        batch: BatchRecord,
+        *,
+        metrics: SearchMetrics | None = None,
+    ) -> ProcessingStats: ...
 
     def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None: ...
 
@@ -1003,6 +1048,8 @@ class SearchDatabasePort(DatabasePort, Protocol):
         records: Sequence[SearchNormalizedRecord],
         errors: Sequence[RowError],
         scope_documents: Sequence[str],
+        *,
+        metrics: SearchMetrics | None = None,
     ) -> int: ...
 
     def finish_search_with_errors(
@@ -1019,4 +1066,5 @@ class SearchDatabasePort(DatabasePort, Protocol):
         stats: ProcessingStats,
         *,
         recovery: bool = False,
+        metrics: SearchMetrics | None = None,
     ) -> None: ...

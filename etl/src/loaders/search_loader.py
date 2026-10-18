@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path, PurePath
 from typing import Callable
@@ -27,10 +28,12 @@ from ..domain.models import (
 )
 from ..domain.normalizers import utc_now_naive
 from ..domain.normalizers import cell_to_text
+from ..metrics import SearchMetrics
 from ..parsers.search_parser import SearchParser
 from ..profiles.search.personas import PersonasV1Normalizer
 from ..profiles.search.personas import PERSON_FIELDS
 from ..profiles.search.telefonos import PHONE_FIELDS, TelefonosV1Normalizer
+from ..profiles.search.familia import FAMILY_FIELDS, FamiliaV1Normalizer
 from ..profiles.search.correos import EMAIL_FIELDS, CorreosV1Normalizer
 from ..profiles.search.direcciones import ADDRESS_FIELDS, DireccionesV1Normalizer
 from ..profiles.search.vehiculos import VEHICLE_FIELDS, VehiculosV1Normalizer
@@ -50,60 +53,87 @@ class SearchLoader:
         settings: Settings,
         *,
         clock: Callable[[], datetime] = utc_now_naive,
+        monotonic: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.database = database
         self.settings = settings
         self.clock = clock
+        self.monotonic = monotonic
 
     def process(self, batch_id: int) -> ProcessingResult:
         stats = ProcessingStats()
         batch = self.database.get_batch(batch_id)
         if batch is None:
             raise BatchNotFoundError(f"No existe el batch #{batch_id}.")
-        self._validate_batch(batch)
-        stage = "search_ingestion"
+        metrics = SearchMetrics(
+            batch.batch_id,
+            batch.dataset_code,
+            batch.refresh_mode,
+            clock=self.monotonic,
+        )
+        successful = False
         try:
-            source_path = self._validated_source_path(batch)
-        except EtlError as exception:
-            self.database.fail_batch(batch_id, self.clock(), str(exception), stats)
-            raise
-        started_at = self.clock()
-        if not self.database.claim_batch(batch_id, started_at):
-            raise BatchStateError(f"El batch #{batch_id} ya fue reclamado por otro worker.")
-
-        try:
-            self._verify_source_hash(batch, source_path)
-            mapping = self.database.get_search_mapping(batch)
-            target_fields, normalizer = self._profile(batch)
-            parser = SearchParser(batch.archivo_extension, mapping, target_fields)
-            self._consume_rows(batch, source_path, parser, normalizer, stats, started_at)
-            if stats.file_rows == 0:
-                raise StructuralFileError("El archivo SEARCH no contiene filas de datos.")
-            if stats.error_rows:
-                self.database.finish_search_with_errors(batch_id, self.clock(), stats)
-                return ProcessingResult(batch_id, "COMPLETADO_CON_ERRORES", stats)
-            stage = "search_gold_publish"
-            self.database.publish_search(batch, self.clock(), stats)
-            return ProcessingResult(batch_id, "COMPLETADO", stats)
-        except Exception as exception:
-            message = str(exception) if isinstance(exception, EtlError) else (
-                f"Error fatal durante el procesamiento SEARCH: {type(exception).__name__}."
-            )
-            self.database.fail_batch(batch_id, self.clock(), message, stats)
-            LOGGER.error(
-                "search_batch_failed",
-                extra={
-                    "context": {
-                        "batch_id": batch_id,
-                        "stage": stage,
-                        "error_type": type(exception).__name__,
-                        "error_code": self._safe_error_code(exception),
-                    }
-                },
-            )
-            if isinstance(exception, EtlError):
+            self._validate_batch(batch)
+            stage = "search_ingestion"
+            try:
+                source_path = self._validated_source_path(batch)
+            except EtlError as exception:
+                self.database.fail_batch(batch_id, self.clock(), str(exception), stats)
                 raise
-            raise StructuralFileError(message) from exception
+            started_at = self.clock()
+            if not self.database.claim_batch(batch_id, started_at):
+                raise BatchStateError(f"El batch #{batch_id} ya fue reclamado por otro worker.")
+
+            try:
+                self._verify_source_hash(batch, source_path)
+                mapping = self.database.get_search_mapping(batch)
+                target_fields, normalizer = self._profile(batch)
+                parser = SearchParser(batch.archivo_extension, mapping, target_fields)
+                self._consume_rows(
+                    batch,
+                    source_path,
+                    parser,
+                    normalizer,
+                    stats,
+                    started_at,
+                    metrics,
+                )
+                if stats.file_rows == 0:
+                    raise StructuralFileError("El archivo SEARCH no contiene filas de datos.")
+                if stats.error_rows:
+                    self.database.finish_search_with_errors(batch_id, self.clock(), stats)
+                    successful = True
+                    return ProcessingResult(batch_id, "COMPLETADO_CON_ERRORES", stats)
+                stage = "search_gold_publish"
+                self.database.publish_search(
+                    batch,
+                    self.clock(),
+                    stats,
+                    metrics=metrics,
+                )
+                successful = True
+                return ProcessingResult(batch_id, "COMPLETADO", stats)
+            except Exception as exception:
+                message = str(exception) if isinstance(exception, EtlError) else (
+                    f"Error fatal durante el procesamiento SEARCH: {type(exception).__name__}."
+                )
+                self.database.fail_batch(batch_id, self.clock(), message, stats)
+                LOGGER.error(
+                    "search_batch_failed",
+                    extra={
+                        "context": {
+                            "batch_id": batch_id,
+                            "stage": stage,
+                            "error_type": type(exception).__name__,
+                            "error_code": self._safe_error_code(exception),
+                        }
+                    }
+                )
+                if isinstance(exception, EtlError):
+                    raise
+                raise StructuralFileError(message) from exception
+        finally:
+            metrics.emit(LOGGER, successful=successful)
 
     def recover_publish(self, batch_id: int) -> ProcessingResult:
         batch = self.database.get_batch(batch_id)
@@ -111,11 +141,18 @@ class SearchLoader:
             raise BatchNotFoundError(f"No existe el batch #{batch_id}.")
         self._validate_recovery_batch(batch)
 
+        metrics = SearchMetrics(
+            batch.batch_id,
+            batch.dataset_code,
+            batch.refresh_mode,
+            clock=self.monotonic,
+        )
         stage = "recovery_preflight"
         stats = ProcessingStats()
+        successful = False
         LOGGER.info("recovery_started", extra={"context": {"batch_id": batch_id}})
         try:
-            stats = self.database.preflight_search_recovery(batch)
+            stats = self.database.preflight_search_recovery(batch, metrics=metrics)
             LOGGER.info(
                 "recovery_preflight_ok",
                 extra={"context": {"batch_id": batch_id}},
@@ -125,13 +162,20 @@ class SearchLoader:
                 "search_gold_publish_started",
                 extra={"context": {"batch_id": batch_id}},
             )
-            self.database.publish_search(batch, self.clock(), stats, recovery=True)
+            self.database.publish_search(
+                batch,
+                self.clock(),
+                stats,
+                recovery=True,
+                metrics=metrics,
+            )
             LOGGER.info(
                 "search_gold_publish_completed",
                 extra={"context": {"batch_id": batch_id}},
             )
             LOGGER.info("recovery_completed", extra={"context": {"batch_id": batch_id}})
 
+            successful = True
             return ProcessingResult(batch_id, "COMPLETADO", stats)
         except Exception as exception:
             try:
@@ -160,6 +204,8 @@ class SearchLoader:
                 },
             )
             raise SearchRecoveryError(stage, exception) from exception
+        finally:
+            metrics.emit(LOGGER, successful=successful)
 
     def _consume_rows(
         self,
@@ -169,33 +215,78 @@ class SearchLoader:
         normalizer,
         stats: ProcessingStats,
         ingested_at: datetime,
+        metrics: SearchMetrics,
     ) -> None:
         chunk = SearchChunk()
         conflicts: dict[tuple[str, str], tuple[object, ...]] = {}
-        for row in parser.rows(source_path):
-            raw, record, errors = normalizer.normalize(row, batch, ingested_at)
-            chunk.raw_records.append(raw)
-            chunk.file_rows += 1
-            scope_document = self._scope_document(row)
-            if scope_document is not None and (record is not None or not errors):
-                chunk.scope_documents.append(scope_document)
-            if record is None and errors:
-                chunk.error_rows += 1
-                chunk.errors.extend(errors)
-            elif record is not None:
-                conflict = self._conflict_error(batch, record, conflicts, ingested_at)
-                if conflict is not None:
+        parse_started = metrics.now()
+        rows_since_measurement = 0
+        parse_active = True
+        try:
+            for row in parser.rows(source_path):
+                raw, record, errors = normalizer.normalize(row, batch, ingested_at)
+                rows_since_measurement += 1
+                chunk.raw_records.append(raw)
+                chunk.file_rows += 1
+                scope_document = self._scope_document(row, batch)
+                if scope_document is not None and (record is not None or not errors):
+                    chunk.scope_documents.append(scope_document)
+                if record is None and errors:
                     chunk.error_rows += 1
-                    chunk.errors.append(conflict)
-                else:
-                    chunk.records.append(record)
-            if chunk.file_rows >= self.settings.insert_batch_size:
-                self._flush_chunk(batch, chunk, stats)
-        if chunk.file_rows:
-            self._flush_chunk(batch, chunk, stats)
+                    chunk.errors.extend(errors)
+                elif record is not None:
+                    conflict = self._conflict_error(batch, record, conflicts, ingested_at)
+                    if conflict is not None:
+                        chunk.error_rows += 1
+                        chunk.errors.append(conflict)
+                    else:
+                        chunk.records.append(record)
+                if chunk.file_rows < self.settings.insert_batch_size:
+                    continue
+
+                metrics.record(
+                    "parse_normalize",
+                    metrics.now() - parse_started,
+                    rows_processed=rows_since_measurement,
+                )
+                parse_active = False
+                self._flush_chunk(batch, chunk, stats, metrics)
+                parse_started = metrics.now()
+                rows_since_measurement = 0
+                parse_active = True
+            if chunk.file_rows:
+                metrics.record(
+                    "parse_normalize",
+                    metrics.now() - parse_started,
+                    rows_processed=rows_since_measurement,
+                )
+                parse_active = False
+                self._flush_chunk(batch, chunk, stats, metrics)
+        except Exception:
+            if parse_active:
+                metrics.record(
+                    "parse_normalize",
+                    metrics.now() - parse_started,
+                    rows_processed=rows_since_measurement,
+                    failed=True,
+                )
+            raise
         self.database.update_progress(batch.batch_id, stats)
 
-    def _flush_chunk(self, batch: BatchRecord, chunk: SearchChunk, stats: ProcessingStats) -> None:
+    def _flush_chunk(
+        self,
+        batch: BatchRecord,
+        chunk: SearchChunk,
+        stats: ProcessingStats,
+        metrics: SearchMetrics,
+    ) -> None:
+        if batch.dataset_code == "FAMILIA":
+            accepted = list(chunk.records)
+            self._persist_chunk(batch, chunk, accepted, stats, metrics)
+
+            return
+
+        dedup_started = metrics.now()
         unique_records: list[SearchNormalizedRecord] = []
         seen_in_chunk: set[tuple[str, ...]] = set()
         for record in chunk.records:
@@ -213,11 +304,29 @@ class SearchLoader:
             else:
                 accepted.append(record)
 
+        metrics.record(
+            "dedup_lookup",
+            metrics.now() - dedup_started,
+            rows_processed=len(chunk.records),
+            logical_statement_count=1 if unique_records else 0,
+        )
+
+        self._persist_chunk(batch, chunk, accepted, stats, metrics)
+
+    def _persist_chunk(
+        self,
+        batch: BatchRecord,
+        chunk: SearchChunk,
+        accepted: list[SearchNormalizedRecord],
+        stats: ProcessingStats,
+        metrics: SearchMetrics,
+    ) -> None:
         inserted_scope_documents = self.database.insert_search_chunk(
             chunk.raw_records,
             accepted,
             chunk.errors,
             list(dict.fromkeys(chunk.scope_documents)),
+            metrics=metrics,
         )
         stats.file_rows += chunk.file_rows
         stats.inserted_rows += len(accepted)
@@ -238,12 +347,16 @@ class SearchLoader:
         chunk.clear()
 
     @staticmethod
-    def _scope_document(row) -> str | None:
+    def _scope_document(row, batch: BatchRecord) -> str | None:
         try:
             document = cell_to_text(row.mapped_values["documento"])
         except (KeyError, ValueError):
             return None
-        if document is None or re.fullmatch(r"[0-9]{8}", document) is None:
+        if document is None:
+            return None
+        if batch.dataset_code == "FAMILIA":
+            return document
+        if re.fullmatch(r"[0-9]{8}", document) is None:
             return None
         return document
 
@@ -306,7 +419,7 @@ class SearchLoader:
             )
         if (
             batch.tipo != "SEARCH"
-            or batch.dataset_code not in {"PERSONAS", "TELEFONOS", "CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD"}
+            or batch.dataset_code not in {"PERSONAS", "TELEFONOS", "FAMILIA", "CORREOS", "DIRECCIONES", "VEHICULOS", "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD"}
             or batch.source_code is None
             or batch.mapping_version is None
             or batch.perfil_version != "1"
@@ -323,7 +436,7 @@ class SearchLoader:
         if (
             batch.tipo != "SEARCH"
             or batch.dataset_code not in {
-                "PERSONAS", "TELEFONOS", "CORREOS", "DIRECCIONES", "VEHICULOS",
+                "PERSONAS", "TELEFONOS", "FAMILIA", "CORREOS", "DIRECCIONES", "VEHICULOS",
                 "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD",
             }
             or batch.source_code is None
@@ -343,6 +456,8 @@ class SearchLoader:
             return PERSON_FIELDS, PersonasV1Normalizer(self.settings.error_value_max_length)
         if batch.dataset_code == "TELEFONOS":
             return PHONE_FIELDS, TelefonosV1Normalizer(self.settings.error_value_max_length)
+        if batch.dataset_code == "FAMILIA":
+            return FAMILY_FIELDS, FamiliaV1Normalizer(self.settings.error_value_max_length)
         if batch.dataset_code == "CORREOS":
             return EMAIL_FIELDS, CorreosV1Normalizer(self.settings.error_value_max_length)
         if batch.dataset_code == "DIRECCIONES":

@@ -22,6 +22,7 @@ class ProcessImportBatchTest extends ImportFeatureTestCase
             'etl.python_binary' => PHP_BINARY,
             'etl.workdir' => base_path('etl'),
             'etl.process_timeout_seconds' => 3600,
+            'etl.job_timeout_seconds' => 3660,
             'etl.queue' => 'etl',
         ]);
     }
@@ -33,7 +34,7 @@ class ProcessImportBatchTest extends ImportFeatureTestCase
         $this->assertInstanceOf(ShouldBeUnique::class, $job);
         $this->assertSame('27', $job->uniqueId());
         $this->assertSame(1, $job->tries);
-        $this->assertSame(3600, $job->timeout);
+        $this->assertSame(3660, $job->timeout);
         $this->assertTrue($job->failOnTimeout);
         $this->assertSame('etl', $job->queue);
     }

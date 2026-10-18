@@ -165,6 +165,36 @@ class SearchInfrastructureSqlTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/\b(DROP|TRUNCATE)\b/i', $sql);
     }
 
+    public function test_familia_sql_preserves_source_rows_without_a_business_duplicate_barrier(): void
+    {
+        $silver = $this->sql('050_create_search_familiares.sql');
+        $gold = $this->sql('051_create_search_familiares_gold.sql');
+        $source = $this->sql('052_register_search_familia_source.sql');
+        $grants = $this->sql('053_grant_search_familia.sql');
+
+        $this->assertStringContainsString('CREATE TABLE `kp_silver`.`search_familiares`', $silver);
+        $this->assertStringContainsString('`nacimiento_familiar` VARCHAR(100) NULL', $silver);
+        $this->assertStringContainsString('UNIQUE KEY `uq_search_familiares_batch_source_row` (`batch_id`, `source_row_number`)', $silver);
+        $this->assertDoesNotMatchRegularExpression('/UNIQUE KEY[^\n]+record_hash/', $silver);
+        $this->assertStringContainsString('ENGINE=InnoDB', $silver);
+
+        $this->assertStringContainsString('CREATE TABLE `kp_gold`.`search_familiares`', $gold);
+        $this->assertStringContainsString('PRIMARY KEY (`gold_family_id`)', $gold);
+        $this->assertStringContainsString('KEY `idx_gold_familiares_document` (`documento`, `gold_family_id`)', $gold);
+        $this->assertDoesNotMatchRegularExpression('/UNIQUE KEY[^\n]+record_hash/', $gold);
+        $this->assertStringContainsString('ENGINE=InnoDB', $gold);
+
+        $this->assertStringContainsString("('BASE_FAMILIA'", $source);
+        $this->assertStringContainsString("('FAMILIA', 'BASE_FAMILIA', 'FULL_REPLACE', 1, 1, 0", $source);
+        $this->assertStringContainsString('ON DUPLICATE KEY UPDATE', $source);
+        $this->assertStringContainsString('GRANT SELECT, INSERT ON `kp_silver`.`search_familiares`', $grants);
+        $this->assertStringContainsString('GRANT SELECT ON `kp_gold`.`search_familiares`', $grants);
+
+        foreach ([$silver, $gold, $source, $grants] as $sql) {
+            $this->assertDoesNotMatchRegularExpression('/\b(DROP|TRUNCATE|REPLACE INTO|INSERT IGNORE)\b/i', $sql);
+        }
+    }
+
     private function sql(string $filename): string
     {
         $contents = file_get_contents(dirname(__DIR__, 3).'/database/sql/'.$filename);

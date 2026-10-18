@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import datetime
 
@@ -8,6 +9,7 @@ import pymysql
 
 from src.db import MySqlDatabase
 from src.domain.models import ProcessingStats
+from src.metrics import SearchMetrics
 
 from .conftest import make_batch
 
@@ -21,12 +23,14 @@ class PublicationCursor:
         modes_allowed: bool = True,
         active_source: str = "BASE_PERSONAS",
         batch_status: str = "PROCESANDO",
+        lock_acquired: bool = True,
     ) -> None:
         self.fail_gold_insert = fail_gold_insert
         self.other_gold_source = other_gold_source
         self.modes_allowed = modes_allowed
         self.active_source = active_source
         self.batch_status = batch_status
+        self.lock_acquired = lock_acquired
         self.last_sql = ""
         self.executed: list[str] = []
         self.rowcount = 1
@@ -47,6 +51,10 @@ class PublicationCursor:
 
     def fetchone(self):
         sql = self.last_sql
+        if "GET_LOCK" in sql:
+            return {"lock_acquired": int(self.lock_acquired)}
+        if "RELEASE_LOCK" in sql:
+            return {"lock_released": 1}
         if "SELECT estado, filas_archivo" in sql:
             return {
                 "estado": self.batch_status,
@@ -55,8 +63,10 @@ class PublicationCursor:
                 "rows_invalid": 0,
                 "scope_count": 1,
             }
-        if "SELECT DISTINCT source_code" in sql:
-            return {"source_code": "OTRA_FUENTE"} if self.other_gold_source else None
+        if "source_code <> %s" in sql:
+            return {"found": 1} if self.other_gold_source else None
+        if "SELECT 1 AS found" in sql:
+            return None
         if "COUNT(*) AS total" in sql:
             if "IS NULL" in sql:
                 return {"total": 0}
@@ -84,6 +94,7 @@ class PublicationConnection:
         modes_allowed: bool = True,
         active_source: str = "BASE_PERSONAS",
         batch_status: str = "PROCESANDO",
+        lock_acquired: bool = True,
     ) -> None:
         self.publication_cursor = PublicationCursor(
             fail_gold_insert=fail_gold_insert,
@@ -91,6 +102,7 @@ class PublicationConnection:
             modes_allowed=modes_allowed,
             active_source=active_source,
             batch_status=batch_status,
+            lock_acquired=lock_acquired,
         )
         self.began = False
         self.committed = False
@@ -254,6 +266,17 @@ def phone_batch(refresh_mode: str):
     )
 
 
+def family_batch(refresh_mode: str):
+    return make_batch(
+        tipo="SEARCH",
+        perfil_version="1",
+        dataset_code="FAMILIA",
+        source_code="BASE_FAMILIA",
+        refresh_mode=refresh_mode,
+        mapping_version=1,
+    )
+
+
 def test_scope_replace_uses_official_scope_and_single_transaction(settings):
     connection = PublicationConnection()
     database = database_with_connection(settings, connection)
@@ -300,6 +323,89 @@ def test_search_gold_is_applied_before_import_batch_is_locked(settings):
 
     assert gold_insert_index < batch_lock_index < metadata_update_index
     assert connection.committed and not connection.rolled_back
+
+
+def test_heavy_integrity_validation_finishes_before_import_batch_lock(settings):
+    connection = PublicationConnection(active_source="BASE_FAMILIA")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        family_batch("FULL_REPLACE"),
+        datetime(2026, 10, 16, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    executed = connection.publication_cursor.executed
+    lock_index = next(
+        index
+        for index, sql in enumerate(executed)
+        if "FROM `kp_control_test`.`import_batch`" in sql and "FOR UPDATE" in sql
+    )
+    integrity_indexes = [
+        index
+        for index, sql in enumerate(executed)
+        if "COUNT(*) AS total" in sql or "SELECT 1 AS found" in sql
+    ]
+
+    assert integrity_indexes
+    assert max(integrity_indexes) < lock_index
+
+
+def test_publication_is_serialized_by_dataset_source_advisory_lock(settings):
+    connection = PublicationConnection(active_source="BASE_FAMILIA")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        family_batch("FULL_REPLACE"),
+        datetime(2026, 10, 16, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    executed = connection.publication_cursor.executed
+
+    assert "GET_LOCK" in executed[0]
+    assert "RELEASE_LOCK" in executed[-1]
+    assert connection.began and connection.committed and not connection.rolled_back
+
+
+def test_publication_stops_before_transaction_when_dataset_source_lock_is_busy(settings):
+    connection = PublicationConnection(
+        active_source="BASE_FAMILIA",
+        lock_acquired=False,
+    )
+    database = database_with_connection(settings, connection)
+
+    with pytest.raises(RuntimeError, match="Otra publicación SEARCH"):
+        database.publish_search(
+            family_batch("FULL_REPLACE"),
+            datetime(2026, 10, 16, 12, 0),
+            ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+        )
+
+    assert connection.began is False
+    assert connection.committed is False
+    assert connection.rolled_back is False
+    assert all("RELEASE_LOCK" not in sql for sql in connection.publication_cursor.executed)
+
+
+def test_publication_queries_use_existing_source_batch_indexes(settings):
+    connection = PublicationConnection(active_source="BASE_FAMILIA")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        family_batch("FULL_REPLACE"),
+        datetime(2026, 10, 16, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+
+    assert "WHERE source_code = %s AND batch_id <> %s" in sql
+    assert "WHERE source_code = %s AND batch_id = %s" in sql
+    assert "WHERE dataset_code = %s AND source_code = %s AND batch_id = %s" in sql
+    assert "SELECT DISTINCT source_code" not in sql
+    assert "SELECT 1 AS found" in sql
+    assert "LIMIT 1" in sql
 
 
 def test_completed_batch_detected_at_final_lock_rolls_back_duplicate_recovery_work(settings):
@@ -373,9 +479,38 @@ def test_full_replace_uses_upsert_then_removes_only_stale_batch_rows(settings):
 
     sql = "\n".join(connection.publication_cursor.executed)
     assert "ON DUPLICATE KEY UPDATE" in sql
-    assert "WHERE batch_id <> %s" in sql
+    assert "WHERE source_code = %s AND batch_id <> %s" in sql
     assert "REPLACE INTO" not in sql
     assert "INSERT IGNORE" not in sql
+
+
+def test_gold_delete_metric_uses_affected_row_count(settings, caplog):
+    connection = PublicationConnection()
+    database = database_with_connection(settings, connection)
+    metrics = SearchMetrics(
+        123,
+        "PERSONAS",
+        "FULL_REPLACE",
+        memory_probe=lambda: None,
+    )
+
+    database.publish_search(
+        batch("FULL_REPLACE"),
+        datetime(2026, 10, 14, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+        metrics=metrics,
+    )
+    with caplog.at_level("INFO", logger="kpdm.etl.search"):
+        metrics.emit(logging.getLogger("kpdm.etl.search"), successful=True)
+
+    delete_metric = next(
+        record.context
+        for record in caplog.records
+        if record.message == "search_phase_metric"
+        and record.context["phase"] == "gold_delete"
+    )
+
+    assert delete_metric["rows_processed"] == 1
 
 
 def test_gold_failure_rolls_back_cross_schema_publication(settings):
@@ -454,7 +589,7 @@ def test_phone_full_replace_is_set_based_and_removes_stale_gold_in_same_transact
     sql = "\n".join(connection.publication_cursor.executed)
     assert "INSERT INTO `kp_gold_test`.`search_telefonos`" in sql
     assert "ON DUPLICATE KEY UPDATE" in sql
-    assert "DELETE FROM `kp_gold_test`.`search_telefonos` WHERE batch_id <> %s" in sql
+    assert "DELETE FROM `kp_gold_test`.`search_telefonos` WHERE source_code = %s AND batch_id <> %s" in sql
     assert "TRUNCATE" not in sql and "REPLACE INTO" not in sql and "INSERT IGNORE" not in sql
 
 
@@ -482,6 +617,29 @@ def test_phone_gold_failure_rolls_back_without_partial_publication(settings):
 
     assert connection.committed is False
     assert connection.rolled_back is True
+
+
+@pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "SCOPE_REPLACE"])
+def test_family_publication_preserves_source_row_identity_and_uses_the_transactional_publisher(settings, refresh_mode):
+    connection = PublicationConnection(active_source="BASE_FAMILIA")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        family_batch(refresh_mode),
+        datetime(2026, 10, 16, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+    assert "INSERT INTO `kp_gold_test`.`search_familiares`" in sql
+    assert "source_row_number" in sql
+    if refresh_mode == "FULL_REPLACE":
+        assert "ON DUPLICATE KEY UPDATE" in sql
+        assert "DELETE FROM `kp_gold_test`.`search_familiares` WHERE source_code = %s AND batch_id <> %s" in sql
+    else:
+        assert "DELETE gold FROM `kp_gold_test`.`search_familiares` AS gold" in sql
+        assert "INNER JOIN `kp_control_test`.`import_scope_document` AS scope" in sql
+    assert connection.committed and not connection.rolled_back
 
 
 def test_publish_only_recovery_allows_error_batch_and_uses_the_same_transactional_publisher(settings):

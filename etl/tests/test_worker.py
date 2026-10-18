@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+import json
 import logging
 from pathlib import Path
 
@@ -236,6 +237,43 @@ def test_worker_json_formatter_never_serializes_exception_tracebacks() -> None:
     assert '"event": "worker_crashed"' in payload
     assert "PASSWORD=secret" not in payload
     assert "exception" not in payload
+
+
+def test_worker_json_formatter_emits_search_phase_metric_as_one_json_line() -> None:
+    record = logging.LogRecord(
+        name="kpdm.etl.search",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="search_phase_metric",
+        args=(),
+        exc_info=None,
+    )
+    record.context = {
+        "batch_id": 42,
+        "dataset_code": "FAMILIA",
+        "refresh_mode": "FULL_REPLACE",
+        "phase": "gold_insert",
+        "duration_seconds": 2.5,
+        "rows_processed": 41040,
+        "rows_per_second": 16416.0,
+        "logical_statement_count": 1,
+        "executemany_calls": 0,
+        "physical_statement_count": 1,
+        "invocations": 1,
+        "peak_memory_mb": None,
+        "successful": True,
+    }
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["event"] == "search_phase_metric"
+    assert payload["batch_id"] == 42
+    assert payload["phase"] == "gold_insert"
+    assert payload["duration_seconds"] == 2.5
+    assert payload["rows_processed"] == 41040
+    assert "documento" not in payload
+    assert "sql" not in payload
 
 
 def test_interface_error_diagnostic_preserves_zero_code_and_hides_driver_message() -> None:

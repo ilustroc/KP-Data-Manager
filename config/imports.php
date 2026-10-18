@@ -46,10 +46,11 @@ return [
         'preview_rows' => 20,
         'preview_error_limit' => 100,
         'preview_ttl_minutes' => 30,
-        'available_datasets' => ['PERSONAS', 'TELEFONOS', 'CORREOS', 'DIRECCIONES', 'VEHICULOS', 'PROPIEDADES', 'SBS_RESUMEN', 'SBS_DETALLE', 'LABORAL_ESSALUD'],
+        'available_datasets' => ['PERSONAS', 'TELEFONOS', 'FAMILIA', 'CORREOS', 'DIRECCIONES', 'VEHICULOS', 'PROPIEDADES', 'SBS_RESUMEN', 'SBS_DETALLE', 'LABORAL_ESSALUD'],
         'provisional_source_codes' => [
             'PERSONAS' => 'BASE_PERSONAS',
             'TELEFONOS' => 'BASE_TELEFONOS',
+            'FAMILIA' => 'BASE_FAMILIA',
             'CORREOS' => 'BASE_CORREOS',
             'DIRECCIONES' => 'BASE_DIRECCIONES',
             'VEHICULOS' => 'BASE_VEHICULOS',

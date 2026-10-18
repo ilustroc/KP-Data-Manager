@@ -11,6 +11,28 @@ use Throwable;
 
 final class EtlProcessRunner
 {
+    /**
+     * @var list<string>
+     */
+    private const SEARCH_METRIC_PHASES = [
+        'parse_normalize',
+        'bronze_insert',
+        'bronze_id_lookup',
+        'silver_insert',
+        'scope_lookup',
+        'scope_insert',
+        'dedup_lookup',
+        'preflight',
+        'gold_source_validation',
+        'gold_insert',
+        'gold_delete',
+        'integrity_validation',
+        'batch_final_lock',
+        'batch_finalize',
+        'commit',
+        'total',
+    ];
+
     public function run(int $batchId): EtlProcessResult
     {
         return $this->runWorker($batchId, publishOnly: false);
@@ -57,6 +79,8 @@ final class EtlProcessRunner
 
             throw new EtlProcessStartFailed('No fue posible iniciar el procesador ETL.');
         }
+
+        $this->persistSearchPhaseMetrics($result->output(), $batchId);
 
         $stdoutDiagnostic = $this->lastJsonDiagnostic($result->output());
         $stderrDiagnostic = $this->lastJsonDiagnostic($result->errorOutput());
@@ -130,6 +154,92 @@ final class EtlProcessRunner
         return $timeout === 0 ? $process->forever() : $process->timeout($timeout);
     }
 
+    private function persistSearchPhaseMetrics(string $output, int $batchId): void
+    {
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+
+            try {
+                $payload = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                continue;
+            }
+
+            if (! is_array($payload) || ($payload['event'] ?? null) !== 'search_phase_metric') {
+                continue;
+            }
+
+            $metric = $this->safeSearchPhaseMetric($payload, $batchId);
+            if ($metric !== null) {
+                Log::info('search_phase_metric', $metric);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{batch_id: int, dataset_code: string, refresh_mode: string, phase: string, duration_seconds: float, rows_processed: int, rows_per_second: float, logical_statement_count: int, executemany_calls: int, physical_statement_count: int, invocations: int, peak_memory_mb: ?float, successful: bool, last_phase: ?string, failed_phase: ?string}|null
+     */
+    private function safeSearchPhaseMetric(array $payload, int $batchId): ?array
+    {
+        $datasetCode = $this->safeText($payload['dataset_code'] ?? null);
+        $refreshMode = $this->safeText($payload['refresh_mode'] ?? null);
+        $phase = $this->safeMetricPhase($payload['phase'] ?? null);
+        $durationSeconds = $this->safeNonNegativeFloat($payload['duration_seconds'] ?? null);
+        $rowsProcessed = $this->safeNonNegativeInteger($payload['rows_processed'] ?? null);
+        $rowsPerSecond = $this->safeNonNegativeFloat($payload['rows_per_second'] ?? null);
+        $logicalStatementCount = $this->safeNonNegativeInteger(
+            $payload['logical_statement_count'] ?? null,
+        );
+        $executemanyCalls = $this->safeNonNegativeInteger($payload['executemany_calls'] ?? null);
+        $physicalStatementCount = $this->safeNonNegativeInteger(
+            $payload['physical_statement_count'] ?? null,
+        );
+        $invocations = $this->safeNonNegativeInteger($payload['invocations'] ?? null);
+        $peakMemoryValue = $payload['peak_memory_mb'] ?? null;
+        $peakMemoryMb = $peakMemoryValue === null
+            ? null
+            : $this->safeNonNegativeFloat($peakMemoryValue);
+        $successful = $payload['successful'] ?? null;
+
+        if (
+            $datasetCode === null
+            || $refreshMode === null
+            || $phase === null
+            || $durationSeconds === null
+            || $rowsProcessed === null
+            || $rowsPerSecond === null
+            || $logicalStatementCount === null
+            || $executemanyCalls === null
+            || $physicalStatementCount === null
+            || $invocations === null
+            || ($peakMemoryValue !== null && $peakMemoryMb === null)
+            || ! is_bool($successful)
+        ) {
+            return null;
+        }
+
+        return [
+            'batch_id' => $batchId,
+            'dataset_code' => $datasetCode,
+            'refresh_mode' => $refreshMode,
+            'phase' => $phase,
+            'duration_seconds' => $durationSeconds,
+            'rows_processed' => $rowsProcessed,
+            'rows_per_second' => $rowsPerSecond,
+            'logical_statement_count' => $logicalStatementCount,
+            'executemany_calls' => $executemanyCalls,
+            'physical_statement_count' => $physicalStatementCount,
+            'invocations' => $invocations,
+            'peak_memory_mb' => $peakMemoryMb,
+            'successful' => $successful,
+            'last_phase' => $this->safeMetricPhase($payload['last_phase'] ?? null),
+            'failed_phase' => $this->safeMetricPhase($payload['failed_phase'] ?? null),
+        ];
+    }
+
     /**
      * @return array{event: ?string, stage: ?string, error_type: ?string, error_code: ?int, db_driver: ?string, connection_phase: ?string, retryable: ?bool}|null
      */
@@ -186,5 +296,28 @@ final class EtlProcessRunner
         }
 
         return null;
+    }
+
+    private function safeMetricPhase(mixed $value): ?string
+    {
+        return is_string($value) && in_array($value, self::SEARCH_METRIC_PHASES, true)
+            ? $value
+            : null;
+    }
+
+    private function safeNonNegativeInteger(mixed $value): ?int
+    {
+        return is_int($value) && $value >= 0 ? $value : null;
+    }
+
+    private function safeNonNegativeFloat(mixed $value): ?float
+    {
+        if (! is_int($value) && ! is_float($value)) {
+            return null;
+        }
+
+        $number = (float) $value;
+
+        return is_finite($number) && $number >= 0 ? $number : null;
     }
 }

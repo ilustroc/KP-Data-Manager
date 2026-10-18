@@ -14,6 +14,7 @@ from .conftest import FakeSearchDatabase, make_batch, stage_file
 HEADER = "DOCUMENTO,PATERNO,MATERNO,NOMBRES,NACIMIENTO,DIRECCION,SEXO,ESTADO CIVIL,PADRE,MADRE\n"
 ADDRESS_HEADER = "DOCUMENTO,DIRECCION,DEPARTAMENTO,PROVINCIA,DISTRITO,DATA PROCEDENCIA\n"
 SBS_SUMMARY_HEADER = "COD_SBS,FECHA_REPORTE_SBS,DOCUMENTO,CANTIDAD_EMPRESAS,CALIFICACION_NORMAL,CALIFICACION_CPP,CALIFICACION_DEFICIENTE,CALIFICACION_DUDOSO,CALIFICACION_PERDIDAD\n"
+FAMILY_HEADER = "DOCUMENTO,DOCUMENTO FAM.,PATERNO FAM.,MATERNO FAM.,NOMBRES FAM.,NACIMIENTO FAM.,TIPO FAM.\n"
 
 
 def personas_batch(relative_path: str, sha256: str, refresh_mode: str = "FULL_REPLACE"):
@@ -46,6 +47,21 @@ def addresses_batch(relative_path: str, sha256: str):
     )
 
 
+def family_batch(relative_path: str, sha256: str, refresh_mode: str = "FULL_REPLACE"):
+    return make_batch(
+        tipo="SEARCH",
+        perfil_version="1",
+        dataset_code="FAMILIA",
+        source_code="BASE_FAMILIA",
+        refresh_mode=refresh_mode,
+        mapping_version=1,
+        relative_path=relative_path,
+        extension="csv",
+        original_name="familia.csv",
+        sha256=sha256,
+    )
+
+
 def sbs_summary_batch(relative_path: str, sha256: str):
     return make_batch(tipo="SEARCH", perfil_version="1", dataset_code="SBS_RESUMEN", source_code="BASE_SBS", refresh_mode="FULL_REPLACE", mapping_version=1, relative_path=relative_path, extension="csv", original_name="sbs.csv", sha256=sha256)
 
@@ -74,6 +90,97 @@ def test_valid_personas_batch_writes_bronze_silver_scope_and_publishes(settings,
     assert len(database.persons) == 2
     assert database.scope == {"00003862", "00009743"}
     assert database.published is True
+
+
+@pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "SCOPE_REPLACE"])
+def test_familia_preserves_duplicate_source_rows_through_bronze_silver_scope_and_gold(settings, tmp_path, refresh_mode):
+    source = tmp_path / "familia.csv"
+    source.write_text(
+        FAMILY_HEADER
+        + "09529768,9406251AN,ARANA,RAMOS,LUIS ALBERTO,1994-06-25,H\n"
+        + "09529768,9406251AN,ARANA,RAMOS,LUIS ALBERTO,1994-06-25,H\n"
+        + "09529768,00000000,,,,22/03/1972,C\n",
+        encoding="utf-8",
+    )
+    _, sha256 = stage_file(settings, source, "2026/10/123/familia.csv")
+    database = FakeSearchDatabase(family_batch("2026/10/123/familia.csv", sha256, refresh_mode))
+    database.mapping = [
+        {
+            "source_position": position,
+            "source_column": source_header,
+            "target_column": target,
+            "is_required": True,
+            "transformation": "FAMILIA_V1",
+            "default_value": None,
+        }
+        for position, (source_header, target) in enumerate(
+            (
+                ("DOCUMENTO", "documento"),
+                ("DOCUMENTO FAM.", "documento_familiar"),
+                ("PATERNO FAM.", "paterno_familiar"),
+                ("MATERNO FAM.", "materno_familiar"),
+                ("NOMBRES FAM.", "nombres_familiar"),
+                ("NACIMIENTO FAM.", "nacimiento_familiar"),
+                ("TIPO FAM.", "tipo_familiar"),
+            ),
+            start=1,
+        )
+    ]
+
+    result = SearchLoader(database, settings).process(123)
+
+    assert result.status == "COMPLETADO"
+    assert result.stats.file_rows == 3
+    assert result.stats.inserted_rows == 3
+    assert result.stats.duplicate_rows == 0
+    assert len(database.raw_records) == 3
+    assert len(database.families) == 3
+    assert database.families[0].record_hash == database.families[1].record_hash
+    assert database.families[0].source_row != database.families[1].source_row
+    assert database.scope == {"09529768"}
+    assert database.published is True
+
+
+def test_familia_gold_publish_failure_preserves_historical_rows(settings, tmp_path):
+    source = tmp_path / "familia.csv"
+    source.write_text(
+        FAMILY_HEADER + "09529768,09757192,ARANA,VILLANUEVA,OCTAVIO,1972-03-22,HERMANO\n",
+        encoding="utf-8",
+    )
+    _, sha256 = stage_file(settings, source, "2026/10/123/familia.csv")
+    database = FakeSearchDatabase(
+        family_batch("2026/10/123/familia.csv", sha256),
+        fail_publish=True,
+    )
+    database.mapping = [
+        {
+            "source_position": position,
+            "source_column": source_header,
+            "target_column": target,
+            "is_required": True,
+            "transformation": "FAMILIA_V1",
+            "default_value": None,
+        }
+        for position, (source_header, target) in enumerate(
+            (
+                ("DOCUMENTO", "documento"),
+                ("DOCUMENTO FAM.", "documento_familiar"),
+                ("PATERNO FAM.", "paterno_familiar"),
+                ("MATERNO FAM.", "materno_familiar"),
+                ("NOMBRES FAM.", "nombres_familiar"),
+                ("NACIMIENTO FAM.", "nacimiento_familiar"),
+                ("TIPO FAM.", "tipo_familiar"),
+            ),
+            start=1,
+        )
+    ]
+
+    with pytest.raises(StructuralFileError, match="RuntimeError"):
+        SearchLoader(database, settings).process(123)
+
+    assert len(database.raw_records) == 1
+    assert len(database.families) == 1
+    assert database.published is False
 
 
 def test_duplicate_document_is_an_error_and_prevents_gold_publication(settings, tmp_path):

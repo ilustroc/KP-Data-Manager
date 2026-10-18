@@ -9,6 +9,7 @@ final readonly class SearchImportDefinitionRegistry
     public function __construct(
         private PersonasImportDefinition $personas,
         private TelefonosImportDefinition $telefonos,
+        private FamiliaImportDefinition $familia,
         private CorreosImportDefinition $correos,
         private DireccionesImportDefinition $direcciones,
         private VehiculosImportDefinition $vehiculos,
@@ -23,6 +24,7 @@ final readonly class SearchImportDefinitionRegistry
         return match ($dataset) {
             DatasetCode::Personas => $this->personas,
             DatasetCode::Telefonos => $this->telefonos,
+            DatasetCode::Familia => $this->familia,
             DatasetCode::Correos => $this->correos,
             DatasetCode::Direcciones => $this->direcciones,
             DatasetCode::Vehiculos => $this->vehiculos,

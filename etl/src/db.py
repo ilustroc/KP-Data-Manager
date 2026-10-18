@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Sequence
 
@@ -8,6 +10,7 @@ from pymysql.connections import Connection
 from pymysql.cursors import DictCursor
 
 from .config import Settings
+from .metrics import SearchMetrics
 from .domain.models import (
     BBVA_SOURCE_COLUMNS,
     CAJA_AREQUIPA_BRONZE_COLUMNS,
@@ -24,6 +27,7 @@ from .domain.models import (
     ProcessingStats,
     RowError,
     SearchNormalizedRecord,
+    SearchFamilyRecord,
     SearchPersonRecord,
     SearchPhoneRecord,
     SearchEmailRecord,
@@ -38,12 +42,23 @@ from .domain.models import (
 )
 
 
+class MetricsDictCursor(DictCursor):
+    def execute(self, query, args=None):
+        observer = getattr(self.connection, "_kpdm_statement_observer", None)
+        if observer is not None:
+            observer()
+
+        return super().execute(query, args)
+
+
 class MySqlDatabase:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.connection_phase = "connect"
         self._transaction_active = False
         self.last_cleanup_error_type: str | None = None
+        self._active_metrics: SearchMetrics | None = None
+        self._active_metric_phase: str | None = None
         self.connection: Connection = pymysql.connect(
             host=settings.db_host,
             port=settings.db_port,
@@ -52,11 +67,12 @@ class MySqlDatabase:
             database=settings.control_database,
             charset="utf8mb4",
             autocommit=True,
-            cursorclass=DictCursor,
+            cursorclass=MetricsDictCursor,
             connect_timeout=settings.db_connect_timeout,
             read_timeout=settings.db_read_timeout,
             write_timeout=settings.db_write_timeout,
         )
+        self.connection._kpdm_statement_observer = self._record_physical_statement
         try:
             self.connection_phase = "session_setup"
             with self.connection.cursor() as cursor:
@@ -259,6 +275,8 @@ class MySqlDatabase:
         records: Sequence[SearchNormalizedRecord],
         errors: Sequence[RowError],
         scope_documents: Sequence[str],
+        *,
+        metrics: SearchMetrics | None = None,
     ) -> int:
         if not raw_records:
             return 0
@@ -280,6 +298,13 @@ class MySqlDatabase:
                 (`documento`, `telefono`, `operador`, `operador_raw`, `fecha_data`,
                  `source_code`, `batch_id`, `source_raw_id`, `record_hash`, `created_at`)
             VALUES ({", ".join(["%s"] * 10)})
+        """
+        family_sql = f"""
+            INSERT INTO `{self.settings.silver_database}`.`search_familiares`
+                (`documento`, `documento_familiar`, `paterno_familiar`, `materno_familiar`,
+                 `nombres_familiar`, `nacimiento_familiar`, `tipo_familiar`, `source_code`,
+                 `batch_id`, `source_row_number`, `source_raw_id`, `record_hash`, `created_at`)
+            VALUES ({", ".join(["%s"] * 13)})
         """
         email_sql = f"""
             INSERT INTO `{self.settings.silver_database}`.`search_correos`
@@ -343,18 +368,37 @@ class MySqlDatabase:
         inserted_scope_documents = 0
         try:
             with self.connection.cursor() as cursor:
-                cursor.executemany(raw_sql, [record.as_insert_tuple() for record in raw_records])
+                with self._measure(
+                    metrics,
+                    "bronze_insert",
+                    rows_processed=len(raw_records),
+                    logical_statement_count=1,
+                    executemany_calls=1,
+                ):
+                    cursor.executemany(
+                        raw_sql,
+                        [record.as_insert_tuple() for record in raw_records],
+                    )
                 row_numbers = [record.source_row for record in raw_records]
                 placeholders = ", ".join(["%s"] * len(row_numbers))
-                cursor.execute(
-                    f"""
-                        SELECT raw_id, source_row
-                        FROM `{self.settings.bronze_database}`.`search_raw_row`
-                        WHERE batch_id = %s AND source_row IN ({placeholders})
-                    """,
-                    (raw_records[0].batch_id, *row_numbers),
-                )
-                raw_ids = {int(row["source_row"]): int(row["raw_id"]) for row in cursor.fetchall()}
+                with self._measure(
+                    metrics,
+                    "bronze_id_lookup",
+                    rows_processed=len(raw_records),
+                    logical_statement_count=1,
+                ):
+                    cursor.execute(
+                        f"""
+                            SELECT raw_id, source_row
+                            FROM `{self.settings.bronze_database}`.`search_raw_row`
+                            WHERE batch_id = %s AND source_row IN ({placeholders})
+                        """,
+                        (raw_records[0].batch_id, *row_numbers),
+                    )
+                    raw_ids = {
+                        int(row["source_row"]): int(row["raw_id"])
+                        for row in cursor.fetchall()
+                    }
                 if len(raw_ids) != len(raw_records):
                     raise RuntimeError("No se pudieron correlacionar todas las filas Bronze SEARCH.")
                 if records:
@@ -365,6 +409,8 @@ class MySqlDatabase:
                         silver_sql = person_sql
                     elif record_type is SearchPhoneRecord:
                         silver_sql = phone_sql
+                    elif record_type is SearchFamilyRecord:
+                        silver_sql = family_sql
                     elif record_type is SearchEmailRecord:
                         silver_sql = email_sql
                     elif record_type is SearchAddressRecord:
@@ -381,30 +427,90 @@ class MySqlDatabase:
                         silver_sql = essalud_sql
                     else:
                         raise RuntimeError("Tipo de registro SEARCH no soportado.")
-                    cursor.executemany(
-                        silver_sql,
-                        [record.as_insert_tuple(raw_ids[record.source_row]) for record in records],
-                    )
+                    with self._measure(
+                        metrics,
+                        "silver_insert",
+                        rows_processed=len(records),
+                        logical_statement_count=1,
+                        executemany_calls=1,
+                    ):
+                        cursor.executemany(
+                            silver_sql,
+                            [
+                                record.as_insert_tuple(raw_ids[record.source_row])
+                                for record in records
+                            ],
+                        )
                     documents = list(dict.fromkeys(scope_documents))
                     if not documents:
                         documents = list(dict.fromkeys(record.documento for record in records))
                     if documents:
                         placeholders = ", ".join(["%s"] * len(documents))
+                        with self._measure(
+                            metrics,
+                            "scope_lookup",
+                            rows_processed=len(documents),
+                            logical_statement_count=1,
+                        ):
+                            cursor.execute(
+                                f"""
+                                    SELECT documento
+                                    FROM `{self.settings.control_database}`.`import_scope_document`
+                                    WHERE batch_id = %s AND documento IN ({placeholders})
+                                """,
+                                (raw_records[0].batch_id, *documents),
+                            )
+                            existing_documents = {
+                                str(row["documento"]) for row in cursor.fetchall()
+                            }
+                        new_documents = [
+                            document for document in documents if document not in existing_documents
+                        ]
+                        if new_documents:
+                            with self._measure(
+                                metrics,
+                                "scope_insert",
+                                rows_processed=len(new_documents),
+                                logical_statement_count=1,
+                                executemany_calls=1,
+                            ):
+                                cursor.executemany(
+                                    scope_sql,
+                                    [
+                                        (
+                                            raw_records[0].batch_id,
+                                            document,
+                                            raw_records[0].ingested_at,
+                                        )
+                                        for document in new_documents
+                                    ],
+                                )
+                            inserted_scope_documents = len(new_documents)
+                elif scope_documents:
+                    documents = list(dict.fromkeys(scope_documents))
+                    placeholders = ", ".join(["%s"] * len(documents))
+                    with self._measure(
+                        metrics,
+                        "scope_lookup",
+                        rows_processed=len(documents),
+                        logical_statement_count=1,
+                    ):
                         cursor.execute(
-                            f"""
-                                SELECT documento
-                                FROM `{self.settings.control_database}`.`import_scope_document`
-                                WHERE batch_id = %s AND documento IN ({placeholders})
-                            """,
+                            f"SELECT documento FROM `{self.settings.control_database}`.`import_scope_document` WHERE batch_id = %s AND documento IN ({placeholders})",
                             (raw_records[0].batch_id, *documents),
                         )
                         existing_documents = {
                             str(row["documento"]) for row in cursor.fetchall()
                         }
-                        new_documents = [
-                            document for document in documents if document not in existing_documents
-                        ]
-                        if new_documents:
+                    new_documents = [document for document in documents if document not in existing_documents]
+                    if new_documents:
+                        with self._measure(
+                            metrics,
+                            "scope_insert",
+                            rows_processed=len(new_documents),
+                            logical_statement_count=1,
+                            executemany_calls=1,
+                        ):
                             cursor.executemany(
                                 scope_sql,
                                 [
@@ -416,22 +522,16 @@ class MySqlDatabase:
                                     for document in new_documents
                                 ],
                             )
-                            inserted_scope_documents = len(new_documents)
-                elif scope_documents:
-                    documents = list(dict.fromkeys(scope_documents))
-                    placeholders = ", ".join(["%s"] * len(documents))
-                    cursor.execute(
-                        f"SELECT documento FROM `{self.settings.control_database}`.`import_scope_document` WHERE batch_id = %s AND documento IN ({placeholders})",
-                        (raw_records[0].batch_id, *documents),
-                    )
-                    existing_documents = {str(row["documento"]) for row in cursor.fetchall()}
-                    new_documents = [document for document in documents if document not in existing_documents]
-                    if new_documents:
-                        cursor.executemany(scope_sql, [(raw_records[0].batch_id, document, raw_records[0].ingested_at) for document in new_documents])
                         inserted_scope_documents = len(new_documents)
                 if errors:
                     cursor.executemany(error_sql, [error.as_insert_tuple() for error in errors])
-            self._commit_transaction()
+            with self._measure(
+                metrics,
+                "commit",
+                rows_processed=len(raw_records),
+                logical_statement_count=1,
+            ):
+                self._commit_transaction()
             return inserted_scope_documents
         except Exception:
             self._rollback_transaction_safely()
@@ -468,13 +568,27 @@ class MySqlDatabase:
                 ),
             )
 
-    def preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats:
+    def preflight_search_recovery(
+        self,
+        batch: BatchRecord,
+        *,
+        metrics: SearchMetrics | None = None,
+    ) -> ProcessingStats:
+        with self._measure(
+            metrics,
+            "preflight",
+            logical_statement_count=5,
+        ):
+            return self._preflight_search_recovery(batch)
+
+    def _preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats:
         self.connection_phase = "execute"
         if batch.source_code is None or batch.dataset_code is None:
             raise RuntimeError("El batch SEARCH no tiene contexto de recuperación completo.")
         tables = {
             "PERSONAS": "search_personas",
             "TELEFONOS": "search_telefonos",
+            "FAMILIA": "search_familiares",
             "CORREOS": "search_correos",
             "DIRECCIONES": "search_direcciones",
             "VEHICULOS": "search_vehiculos",
@@ -505,8 +619,8 @@ class MySqlDatabase:
                 raise RuntimeError("El batch SEARCH contiene filas inválidas y no es recuperable.")
 
             cursor.execute(
-                f"SELECT COUNT(*) AS total FROM `{self.settings.bronze_database}`.`search_raw_row` WHERE batch_id = %s AND dataset_code = %s",
-                (batch.batch_id, batch.dataset_code),
+                f"SELECT COUNT(*) AS total FROM `{self.settings.bronze_database}`.`search_raw_row` WHERE dataset_code = %s AND source_code = %s AND batch_id = %s",
+                (batch.dataset_code, batch.source_code, batch.batch_id),
             )
             bronze_count = int(cursor.fetchone()["total"])
             cursor.execute(
@@ -581,12 +695,14 @@ class MySqlDatabase:
         stats: ProcessingStats,
         *,
         recovery: bool = False,
+        metrics: SearchMetrics | None = None,
     ) -> None:
         if batch.source_code is None:
             raise RuntimeError("El publicador SEARCH recibió un batch incompatible.")
         tables = {
             "PERSONAS": ("search_personas", "person_id", "search_person_index"),
             "TELEFONOS": ("search_telefonos", "phone_id", "search_telefonos"),
+            "FAMILIA": ("search_familiares", "family_id", "search_familiares"),
             "CORREOS": ("search_correos", "email_id", "search_correos"),
             "DIRECCIONES": ("search_direcciones", "address_id", "search_direcciones"),
             "VEHICULOS": ("search_vehiculos", "vehicle_id", "search_vehiculos"),
@@ -598,147 +714,267 @@ class MySqlDatabase:
         if batch.dataset_code not in tables:
             raise RuntimeError("El publicador SEARCH recibió un dataset no soportado.")
         silver_table, silver_id, gold_table = tables[batch.dataset_code]
-        self._begin_transaction()
+        publication_lock_name = self._search_publication_lock_name(batch)
+        publication_lock_acquired = False
         try:
-            self.connection_phase = "execute"
             with self.connection.cursor() as cursor:
-                self._validate_active_search_source(cursor, batch, lock=False)
-                self._ensure_gold_source_is_compatible(cursor, batch.source_code, gold_table)
-
-                if batch.refresh_mode == "SCOPE_REPLACE":
-                    cursor.execute(
-                        f"""
-                            DELETE gold
-                            FROM `{self.settings.gold_database}`.`{gold_table}` AS gold
-                            INNER JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
-                                ON scope.documento = gold.documento
-                            WHERE scope.batch_id = %s
-                        """,
-                        (batch.batch_id,),
-                    )
-                    self._insert_gold_search(cursor, batch, published_at, upsert=False)
-                elif batch.refresh_mode == "FULL_REPLACE":
-                    self._insert_gold_search(cursor, batch, published_at, upsert=True)
-                    cursor.execute(
-                        f"DELETE FROM `{self.settings.gold_database}`.`{gold_table}` WHERE batch_id <> %s",
-                        (batch.batch_id,),
-                    )
-                else:
-                    raise RuntimeError("Modo de publicación SEARCH no soportado.")
-
-                cursor.execute(
-                    f"""
-                        SELECT estado, filas_archivo, rows_valid, rows_invalid, scope_count
-                        FROM `{self.settings.control_database}`.`import_batch`
-                        WHERE batch_id = %s FOR UPDATE
-                    """,
-                    (batch.batch_id,),
-                )
-                locked_batch = cursor.fetchone()
-                allowed_states = {"PROCESANDO", "ERROR"} if recovery else {"PROCESANDO"}
-                if locked_batch is None or locked_batch["estado"] not in allowed_states:
-                    raise RuntimeError("El batch dejó de estar publicable.")
-                persisted_counters = (
-                    int(locked_batch["filas_archivo"] or 0),
-                    int(locked_batch["rows_valid"] or 0),
-                    int(locked_batch["rows_invalid"] or 0),
-                    int(locked_batch["scope_count"] or 0),
-                )
-                expected_counters = (
-                    stats.file_rows,
-                    stats.inserted_rows,
-                    stats.error_rows,
-                    stats.scope_count,
-                )
-                if persisted_counters != expected_counters:
-                    raise RuntimeError("Los contadores persistidos del batch SEARCH no coinciden.")
-                self._validate_active_search_source(cursor, batch, lock=True)
-                cursor.execute(
-                    f"SELECT COUNT(*) AS total FROM `{self.settings.silver_database}`.`{silver_table}` WHERE batch_id = %s",
-                    (batch.batch_id,),
-                )
-                silver_count = int(cursor.fetchone()["total"])
-                cursor.execute(
-                    f"SELECT COUNT(*) AS total FROM `{self.settings.bronze_database}`.`search_raw_row` WHERE batch_id = %s AND dataset_code = %s",
-                    (batch.batch_id, batch.dataset_code),
-                )
-                bronze_count = int(cursor.fetchone()["total"])
-                cursor.execute(
-                    f"SELECT COUNT(*) AS total FROM `{self.settings.control_database}`.`import_scope_document` WHERE batch_id = %s",
-                    (batch.batch_id,),
-                )
-                scope_count = int(cursor.fetchone()["total"])
-                if (
-                    stats.error_rows != 0
-                    or bronze_count != stats.file_rows
-                    or silver_count != stats.inserted_rows
-                    or scope_count != stats.scope_count
+                with self._measure(
+                    metrics,
+                    "gold_source_validation",
+                    logical_statement_count=1,
                 ):
-                    raise RuntimeError("Silver, scope y contadores del batch SEARCH no coinciden.")
-                cursor.execute(
-                    f"""
-                        SELECT COUNT(*) AS total
-                        FROM `{self.settings.silver_database}`.`{silver_table}` AS silver
-                        LEFT JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
-                          ON scope.batch_id = silver.batch_id AND scope.documento = silver.documento
-                        WHERE silver.batch_id = %s AND scope.id IS NULL
-                    """,
-                    (batch.batch_id,),
-                )
-                silver_without_scope = int(cursor.fetchone()["total"])
-                cursor.execute(
-                    f"""
-                        SELECT COUNT(*) AS total
-                        FROM `{self.settings.control_database}`.`import_scope_document` AS scope
-                        LEFT JOIN `{self.settings.silver_database}`.`{silver_table}` AS silver
-                          ON silver.batch_id = scope.batch_id AND silver.documento = scope.documento
-                        WHERE scope.batch_id = %s AND silver.{silver_id} IS NULL
-                    """,
-                    (batch.batch_id,),
-                )
-                scope_without_silver = int(cursor.fetchone()["total"])
-                allows_scope_without_silver = batch.dataset_code == "DIRECCIONES"
-                if silver_without_scope or (scope_without_silver and not allows_scope_without_silver):
-                    raise RuntimeError("El scope oficial no corresponde exactamente a Silver SEARCH.")
+                    self._acquire_search_publication_lock(cursor, publication_lock_name)
+            publication_lock_acquired = True
 
-                cursor.execute(
-                    f"SELECT COUNT(*) AS total FROM `{self.settings.gold_database}`.`{gold_table}` WHERE batch_id = %s",
-                    (batch.batch_id,),
-                )
-                published_count = int(cursor.fetchone()["total"])
-                if published_count != silver_count:
-                    raise RuntimeError("La cantidad publicada en Gold no coincide con Silver.")
-                cursor.execute(
-                    f"""
-                        UPDATE `{self.settings.control_database}`.`import_batch`
-                        SET estado = 'COMPLETADO', fecha_fin = %s, validated_at = %s,
-                            published_at = %s, filas_archivo = %s, filas_insertadas = %s,
-                            filas_duplicadas = %s, filas_error = %s, rows_valid = %s,
-                            rows_invalid = 0, rows_published = %s, scope_count = %s,
-                            mensaje_error = NULL
-                        WHERE batch_id = %s
-                          AND estado {"IN ('PROCESANDO', 'ERROR')" if recovery else "= 'PROCESANDO'"}
-                    """,
-                    (
-                        published_at,
-                        published_at,
-                        published_at,
+            self._begin_transaction()
+            try:
+                self.connection_phase = "execute"
+                with self.connection.cursor() as cursor:
+                    with self._measure(
+                        metrics,
+                        "gold_source_validation",
+                        logical_statement_count=2,
+                    ):
+                        self._validate_active_search_source(cursor, batch, lock=False)
+                        self._ensure_gold_source_is_compatible(
+                            cursor,
+                            batch.source_code,
+                            gold_table,
+                        )
+
+                    if batch.refresh_mode == "SCOPE_REPLACE":
+                        with self._measure(
+                            metrics,
+                            "gold_delete",
+                            logical_statement_count=1,
+                        ) as measurement:
+                            cursor.execute(
+                                f"""
+                                    DELETE gold
+                                    FROM `{self.settings.gold_database}`.`{gold_table}` AS gold
+                                    INNER JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
+                                        ON scope.documento = gold.documento
+                                    WHERE scope.batch_id = %s
+                                      AND gold.source_code = %s
+                                """,
+                                (batch.batch_id, batch.source_code),
+                            )
+                            if measurement is not None:
+                                measurement.rows_processed = max(0, cursor.rowcount)
+                        with self._measure(
+                            metrics,
+                            "gold_insert",
+                            rows_processed=stats.inserted_rows,
+                            logical_statement_count=1,
+                        ):
+                            self._insert_gold_search(
+                                cursor,
+                                batch,
+                                published_at,
+                                upsert=False,
+                            )
+                    elif batch.refresh_mode == "FULL_REPLACE":
+                        with self._measure(
+                            metrics,
+                            "gold_insert",
+                            rows_processed=stats.inserted_rows,
+                            logical_statement_count=1,
+                        ):
+                            self._insert_gold_search(
+                                cursor,
+                                batch,
+                                published_at,
+                                upsert=True,
+                            )
+                        with self._measure(
+                            metrics,
+                            "gold_delete",
+                            logical_statement_count=1,
+                        ) as measurement:
+                            cursor.execute(
+                                f"DELETE FROM `{self.settings.gold_database}`.`{gold_table}` WHERE source_code = %s AND batch_id <> %s",
+                                (batch.source_code, batch.batch_id),
+                            )
+                            if measurement is not None:
+                                measurement.rows_processed = max(0, cursor.rowcount)
+                    else:
+                        raise RuntimeError("Modo de publicación SEARCH no soportado.")
+
+                    with self._measure(
+                        metrics,
+                        "integrity_validation",
+                        rows_processed=stats.file_rows,
+                        logical_statement_count=6,
+                    ):
+                        cursor.execute(
+                            f"SELECT COUNT(*) AS total FROM `{self.settings.silver_database}`.`{silver_table}` WHERE batch_id = %s",
+                            (batch.batch_id,),
+                        )
+                        silver_count = int(cursor.fetchone()["total"])
+                        cursor.execute(
+                            f"SELECT COUNT(*) AS total FROM `{self.settings.bronze_database}`.`search_raw_row` WHERE dataset_code = %s AND source_code = %s AND batch_id = %s",
+                            (batch.dataset_code, batch.source_code, batch.batch_id),
+                        )
+                        bronze_count = int(cursor.fetchone()["total"])
+                        cursor.execute(
+                            f"SELECT COUNT(*) AS total FROM `{self.settings.control_database}`.`import_scope_document` WHERE batch_id = %s",
+                            (batch.batch_id,),
+                        )
+                        scope_count = int(cursor.fetchone()["total"])
+                        if (
+                            stats.error_rows != 0
+                            or bronze_count != stats.file_rows
+                            or silver_count != stats.inserted_rows
+                            or scope_count != stats.scope_count
+                        ):
+                            raise RuntimeError(
+                                "Silver, scope y contadores del batch SEARCH no coinciden."
+                            )
+
+                        cursor.execute(
+                            f"""
+                                SELECT 1 AS found
+                                FROM `{self.settings.silver_database}`.`{silver_table}` AS silver
+                                LEFT JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
+                                  ON scope.batch_id = silver.batch_id
+                                 AND scope.documento = silver.documento
+                                WHERE silver.batch_id = %s AND scope.id IS NULL
+                                LIMIT 1
+                            """,
+                            (batch.batch_id,),
+                        )
+                        silver_without_scope = cursor.fetchone() is not None
+                        cursor.execute(
+                            f"""
+                                SELECT 1 AS found
+                                FROM `{self.settings.control_database}`.`import_scope_document` AS scope
+                                LEFT JOIN `{self.settings.silver_database}`.`{silver_table}` AS silver
+                                  ON silver.batch_id = scope.batch_id
+                                 AND silver.documento = scope.documento
+                                WHERE scope.batch_id = %s AND silver.{silver_id} IS NULL
+                                LIMIT 1
+                            """,
+                            (batch.batch_id,),
+                        )
+                        scope_without_silver = cursor.fetchone() is not None
+                        allows_scope_without_silver = batch.dataset_code == "DIRECCIONES"
+                        if silver_without_scope or (
+                            scope_without_silver and not allows_scope_without_silver
+                        ):
+                            raise RuntimeError(
+                                "El scope oficial no corresponde exactamente a Silver SEARCH."
+                            )
+
+                        cursor.execute(
+                            f"SELECT COUNT(*) AS total FROM `{self.settings.gold_database}`.`{gold_table}` WHERE source_code = %s AND batch_id = %s",
+                            (batch.source_code, batch.batch_id),
+                        )
+                        published_count = int(cursor.fetchone()["total"])
+                        if published_count != silver_count:
+                            raise RuntimeError(
+                                "La cantidad publicada en Gold no coincide con Silver."
+                            )
+
+                    with self._measure(
+                        metrics,
+                        "batch_final_lock",
+                        logical_statement_count=1,
+                    ):
+                        cursor.execute(
+                            f"""
+                                SELECT estado, filas_archivo, rows_valid, rows_invalid, scope_count
+                                FROM `{self.settings.control_database}`.`import_batch`
+                                WHERE batch_id = %s FOR UPDATE
+                            """,
+                            (batch.batch_id,),
+                        )
+                        locked_batch = cursor.fetchone()
+                    allowed_states = (
+                        {"PROCESANDO", "ERROR"} if recovery else {"PROCESANDO"}
+                    )
+                    if locked_batch is None or locked_batch["estado"] not in allowed_states:
+                        raise RuntimeError("El batch dejó de estar publicable.")
+                    persisted_counters = (
+                        int(locked_batch["filas_archivo"] or 0),
+                        int(locked_batch["rows_valid"] or 0),
+                        int(locked_batch["rows_invalid"] or 0),
+                        int(locked_batch["scope_count"] or 0),
+                    )
+                    expected_counters = (
                         stats.file_rows,
                         stats.inserted_rows,
-                        stats.duplicate_rows,
                         stats.error_rows,
-                        stats.inserted_rows,
-                        published_count,
-                        scope_count,
-                        batch.batch_id,
-                    ),
-                )
-                if cursor.rowcount != 1:
-                    raise RuntimeError("No se pudo confirmar el estado publicado del batch.")
-            self._commit_transaction()
-        except Exception:
-            self._rollback_transaction_safely()
-            raise
+                        stats.scope_count,
+                    )
+                    if persisted_counters != expected_counters:
+                        raise RuntimeError(
+                            "Los contadores persistidos del batch SEARCH no coinciden."
+                        )
+                    with self._measure(
+                        metrics,
+                        "gold_source_validation",
+                        logical_statement_count=1,
+                    ):
+                        self._validate_active_search_source(cursor, batch, lock=True)
+                    with self._measure(
+                        metrics,
+                        "batch_finalize",
+                        logical_statement_count=1,
+                    ):
+                        cursor.execute(
+                            f"""
+                                UPDATE `{self.settings.control_database}`.`import_batch`
+                                SET estado = 'COMPLETADO', fecha_fin = %s, validated_at = %s,
+                                    published_at = %s, filas_archivo = %s, filas_insertadas = %s,
+                                    filas_duplicadas = %s, filas_error = %s, rows_valid = %s,
+                                    rows_invalid = 0, rows_published = %s, scope_count = %s,
+                                    mensaje_error = NULL
+                                WHERE batch_id = %s
+                                  AND estado {"IN ('PROCESANDO', 'ERROR')" if recovery else "= 'PROCESANDO'"}
+                            """,
+                            (
+                                published_at,
+                                published_at,
+                                published_at,
+                                stats.file_rows,
+                                stats.inserted_rows,
+                                stats.duplicate_rows,
+                                stats.error_rows,
+                                stats.inserted_rows,
+                                published_count,
+                                scope_count,
+                                batch.batch_id,
+                            ),
+                        )
+                        if cursor.rowcount != 1:
+                            raise RuntimeError(
+                                "No se pudo confirmar el estado publicado del batch."
+                            )
+                with self._measure(
+                    metrics,
+                    "commit",
+                    rows_processed=published_count,
+                    logical_statement_count=1,
+                ):
+                    self._commit_transaction()
+            except Exception:
+                self._rollback_transaction_safely()
+                raise
+        finally:
+            if publication_lock_acquired:
+                try:
+                    with self.connection.cursor() as cursor:
+                        with self._measure(
+                            metrics,
+                            "gold_source_validation",
+                            logical_statement_count=1,
+                        ):
+                            self._release_search_publication_lock(
+                                cursor,
+                                publication_lock_name,
+                            )
+                except Exception as exception:
+                    self.last_cleanup_error_type = type(exception).__name__
 
     def _validate_active_search_source(
         self,
@@ -781,7 +1017,7 @@ class MySqlDatabase:
     ) -> None:
         cursor.execute(
             f"""
-                SELECT DISTINCT source_code
+                SELECT 1 AS found
                 FROM `{self.settings.gold_database}`.`{gold_table}`
                 WHERE source_code <> %s
                 LIMIT 1
@@ -790,6 +1026,25 @@ class MySqlDatabase:
         )
         if cursor.fetchone() is not None:
             raise RuntimeError("Gold SEARCH contiene otra fuente; no existe una política de precedencia.")
+
+    def _search_publication_lock_name(self, batch: BatchRecord) -> str:
+        identity = f"{batch.dataset_code}|{batch.source_code}".encode("utf-8")
+        digest = hashlib.sha256(identity).hexdigest()[:40]
+
+        return f"kpdm:search:{digest}"
+
+    def _acquire_search_publication_lock(self, cursor: DictCursor, lock_name: str) -> None:
+        cursor.execute(
+            "SELECT GET_LOCK(%s, %s) AS lock_acquired",
+            (lock_name, self.settings.search_publication_lock_timeout),
+        )
+        result = cursor.fetchone()
+        if result is None or int(result["lock_acquired"] or 0) != 1:
+            raise RuntimeError("Otra publicación SEARCH del mismo dataset y fuente está activa.")
+
+    @staticmethod
+    def _release_search_publication_lock(cursor: DictCursor, lock_name: str) -> None:
+        cursor.execute("SELECT RELEASE_LOCK(%s) AS lock_released", (lock_name,))
 
     def _insert_gold_search(
         self,
@@ -801,6 +1056,9 @@ class MySqlDatabase:
     ) -> None:
         if batch.dataset_code == "TELEFONOS":
             self._insert_gold_phones(cursor, batch.batch_id, published_at, upsert=upsert)
+            return
+        if batch.dataset_code == "FAMILIA":
+            self._insert_gold_familiares(cursor, batch.batch_id, published_at, upsert=upsert)
             return
         if batch.dataset_code == "CORREOS":
             self._insert_gold_correos(cursor, batch.batch_id, published_at, upsert=upsert)
@@ -877,6 +1135,40 @@ class MySqlDatabase:
                     fecha_data = VALUES(fecha_data),
                     source_code = VALUES(source_code),
                     batch_id = VALUES(batch_id),
+                    updated_at = VALUES(updated_at)
+            """
+        cursor.execute(sql, (published_at, batch_id))
+
+    def _insert_gold_familiares(
+        self,
+        cursor: DictCursor,
+        batch_id: int,
+        published_at: datetime,
+        *,
+        upsert: bool,
+    ) -> None:
+        sql = f"""
+            INSERT INTO `{self.settings.gold_database}`.`search_familiares`
+                (`documento`, `documento_familiar`, `paterno_familiar`, `materno_familiar`,
+                 `nombres_familiar`, `nacimiento_familiar`, `tipo_familiar`, `record_hash`,
+                 `source_code`, `batch_id`, `source_row_number`, `updated_at`)
+            SELECT documento, documento_familiar, paterno_familiar, materno_familiar,
+                   nombres_familiar, nacimiento_familiar, tipo_familiar, record_hash,
+                   source_code, batch_id, source_row_number, %s
+            FROM `{self.settings.silver_database}`.`search_familiares`
+            WHERE batch_id = %s
+        """
+        if upsert:
+            sql += """
+                ON DUPLICATE KEY UPDATE
+                    documento = VALUES(documento),
+                    documento_familiar = VALUES(documento_familiar),
+                    paterno_familiar = VALUES(paterno_familiar),
+                    materno_familiar = VALUES(materno_familiar),
+                    nombres_familiar = VALUES(nombres_familiar),
+                    nacimiento_familiar = VALUES(nacimiento_familiar),
+                    tipo_familiar = VALUES(tipo_familiar),
+                    record_hash = VALUES(record_hash),
                     updated_at = VALUES(updated_at)
             """
         cursor.execute(sql, (published_at, batch_id))
@@ -1436,6 +1728,42 @@ class MySqlDatabase:
         self.connection_phase = "transaction_begin"
         self.connection.begin()
         self._transaction_active = True
+
+    @contextmanager
+    def _measure(
+        self,
+        metrics: SearchMetrics | None,
+        phase: str,
+        *,
+        rows_processed: int = 0,
+        logical_statement_count: int = 0,
+        executemany_calls: int = 0,
+    ):
+        if metrics is None:
+            yield
+            return
+
+        previous_metrics = getattr(self, "_active_metrics", None)
+        previous_phase = getattr(self, "_active_metric_phase", None)
+        self._active_metrics = metrics
+        self._active_metric_phase = phase
+        try:
+            with metrics.measure(
+                phase,
+                rows_processed=rows_processed,
+                logical_statement_count=logical_statement_count,
+                executemany_calls=executemany_calls,
+            ) as measurement:
+                yield measurement
+        finally:
+            self._active_metrics = previous_metrics
+            self._active_metric_phase = previous_phase
+
+    def _record_physical_statement(self) -> None:
+        metrics = getattr(self, "_active_metrics", None)
+        phase = getattr(self, "_active_metric_phase", None)
+        if metrics is not None and phase is not None:
+            metrics.record_physical_statement(phase)
 
     def _commit_transaction(self) -> None:
         self.connection_phase = "commit"

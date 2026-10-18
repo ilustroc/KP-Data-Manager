@@ -25,7 +25,7 @@ class ProcessImportBatch implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public readonly int $batchId)
     {
-        $this->timeout = max(0, (int) config('etl.process_timeout_seconds'));
+        $this->timeout = max(0, (int) config('etl.job_timeout_seconds'));
         $this->onQueue((string) config('etl.queue'));
     }
 

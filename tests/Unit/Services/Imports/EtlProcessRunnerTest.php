@@ -82,6 +82,139 @@ class EtlProcessRunnerTest extends TestCase
         });
     }
 
+    public function test_runner_persists_all_search_phase_metrics_after_process_exit(): void
+    {
+        Log::spy();
+        $phaseMetric = $this->searchMetric([
+            'batch_id' => 999,
+            'phase' => 'gold_insert',
+            'duration_seconds' => 2.5,
+            'rows_processed' => 41040,
+            'rows_per_second' => 16416.0,
+            'logical_statement_count' => 1,
+            'physical_statement_count' => 1,
+            'documento' => '09529768',
+            'sql' => 'DELETE FROM sensitive_table',
+            'bindings' => ['sensitive'],
+        ]);
+        $totalMetric = $this->searchMetric([
+            'batch_id' => 999,
+            'phase' => 'total',
+            'duration_seconds' => 9.75,
+            'rows_processed' => 41040,
+            'rows_per_second' => 4209.231,
+            'logical_statement_count' => 16,
+            'physical_statement_count' => 15,
+            'invocations' => 15,
+            'last_phase' => 'commit',
+        ]);
+        Process::fake([
+            '*' => Process::result(
+                $phaseMetric."\n".$totalMetric."\n".'{"event":"worker_completed"}',
+                exitCode: 0,
+            ),
+        ]);
+
+        $result = (new EtlProcessRunner)->run(123);
+
+        $this->assertSame('worker_completed', $result->lastEvent);
+        $loggedMetrics = [];
+        Log::shouldHaveReceived('info')->twice()->withArgs(
+            function (string $message, array $context) use (&$loggedMetrics): bool {
+                $loggedMetrics[$context['phase']] = $context;
+
+                return $message === 'search_phase_metric';
+            },
+        );
+        $this->assertSame([
+            'batch_id' => 123,
+            'dataset_code' => 'FAMILIA',
+            'refresh_mode' => 'FULL_REPLACE',
+            'phase' => 'gold_insert',
+            'duration_seconds' => 2.5,
+            'rows_processed' => 41040,
+            'rows_per_second' => 16416.0,
+            'logical_statement_count' => 1,
+            'executemany_calls' => 0,
+            'physical_statement_count' => 1,
+            'invocations' => 1,
+            'peak_memory_mb' => null,
+            'successful' => true,
+            'last_phase' => null,
+            'failed_phase' => null,
+        ], $loggedMetrics['gold_insert']);
+        $this->assertSame([
+            'batch_id' => 123,
+            'dataset_code' => 'FAMILIA',
+            'refresh_mode' => 'FULL_REPLACE',
+            'phase' => 'total',
+            'duration_seconds' => 9.75,
+            'rows_processed' => 41040,
+            'rows_per_second' => 4209.231,
+            'logical_statement_count' => 16,
+            'executemany_calls' => 0,
+            'physical_statement_count' => 15,
+            'invocations' => 15,
+            'peak_memory_mb' => null,
+            'successful' => true,
+            'last_phase' => 'commit',
+            'failed_phase' => null,
+        ], $loggedMetrics['total']);
+    }
+
+    public function test_runner_persists_failed_metric_without_free_form_sensitive_fields(): void
+    {
+        Log::spy();
+        $metric = $this->searchMetric([
+            'phase' => 'gold_insert',
+            'successful' => false,
+            'last_phase' => 'gold_insert',
+            'failed_phase' => 'gold_insert',
+            'documento' => '09529768',
+            'nombre' => 'Sensitive Name',
+            'raw_payload' => ['sensitive'],
+            'password' => 'secret',
+        ]);
+        Process::fake([
+            '*' => Process::result(
+                $metric."\n".'{"event":"worker_crashed","stage":"search_gold_publish","error_type":"OperationalError","error_code":2013,"db_driver":"pymysql","connection_phase":"execute","retryable":true}',
+                exitCode: 1,
+            ),
+        ]);
+
+        (new EtlProcessRunner)->run(456);
+
+        Log::shouldHaveReceived('info')->once()->withArgs(
+            function (string $message, array $context): bool {
+                $serialized = json_encode($context, JSON_THROW_ON_ERROR);
+
+                return $message === 'search_phase_metric'
+                    && $context['batch_id'] === 456
+                    && $context['phase'] === 'gold_insert'
+                    && $context['successful'] === false
+                    && $context['failed_phase'] === 'gold_insert'
+                    && ! str_contains($serialized, '09529768')
+                    && ! str_contains($serialized, 'Sensitive Name')
+                    && ! str_contains($serialized, 'secret');
+            },
+        );
+    }
+
+    public function test_runner_ignores_malformed_or_unknown_search_metrics(): void
+    {
+        Log::spy();
+        Process::fake([
+            '*' => Process::result(
+                $this->searchMetric(['phase' => 'unknown_phase'])."\n".'{"event":"worker_completed"}',
+                exitCode: 0,
+            ),
+        ]);
+
+        (new EtlProcessRunner)->run(123);
+
+        Log::shouldNotHaveReceived('info');
+    }
+
     public function test_runner_adds_publish_only_without_database_credentials(): void
     {
         Process::fake([
@@ -186,5 +319,30 @@ class EtlProcessRunnerTest extends TestCase
         } finally {
             Process::assertNothingRan();
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    private function searchMetric(array $overrides = []): string
+    {
+        return json_encode(array_replace([
+            'event' => 'search_phase_metric',
+            'batch_id' => 42,
+            'dataset_code' => 'FAMILIA',
+            'refresh_mode' => 'FULL_REPLACE',
+            'phase' => 'parse_normalize',
+            'duration_seconds' => 0.5,
+            'rows_processed' => 100,
+            'rows_per_second' => 200.0,
+            'logical_statement_count' => 0,
+            'executemany_calls' => 0,
+            'physical_statement_count' => 0,
+            'invocations' => 1,
+            'peak_memory_mb' => null,
+            'successful' => true,
+            'last_phase' => null,
+            'failed_phase' => null,
+        ], $overrides), JSON_THROW_ON_ERROR);
     }
 }

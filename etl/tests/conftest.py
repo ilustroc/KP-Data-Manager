@@ -14,6 +14,7 @@ from src.domain.models import (
     PaymentRecord,
     ProcessingStats,
     RowError,
+    SearchFamilyRecord,
     SearchPersonRecord,
     SearchNormalizedRecord,
     SearchPhoneRecord,
@@ -133,6 +134,7 @@ class FakeSearchDatabase(FakeDatabase):
         self.raw_records: list[SearchRawRecord] = []
         self.persons: list[SearchPersonRecord] = []
         self.phones: list[SearchPhoneRecord] = []
+        self.families: list[SearchFamilyRecord] = []
         self.scope: set[str] = set()
         self.record_keys: set[tuple[str, ...]] = set()
         self.published = False
@@ -187,12 +189,15 @@ class FakeSearchDatabase(FakeDatabase):
         records: Sequence[SearchNormalizedRecord],
         errors: Sequence[RowError],
         scope_documents: Sequence[str],
+        *,
+        metrics=None,
     ) -> int:
         self.raw_records.extend(raw_records)
         self.persons.extend(
             record for record in records if isinstance(record, SearchPersonRecord)
         )
         self.phones.extend(record for record in records if isinstance(record, SearchPhoneRecord))
+        self.families.extend(record for record in records if isinstance(record, SearchFamilyRecord))
         previous_scope_count = len(self.scope)
         self.scope.update(scope_documents)
         self.record_keys.update(record.deduplication_key for record in records)
@@ -209,7 +214,7 @@ class FakeSearchDatabase(FakeDatabase):
         self.finished_status = "COMPLETADO_CON_ERRORES"
         self.final_stats = copy_stats(stats)
 
-    def preflight_search_recovery(self, batch: BatchRecord) -> ProcessingStats:
+    def preflight_search_recovery(self, batch: BatchRecord, *, metrics=None) -> ProcessingStats:
         self.recovery_preflight_calls += 1
         if self.recovery_stats is None:
             raise RuntimeError("missing recovery preflight")
@@ -225,6 +230,7 @@ class FakeSearchDatabase(FakeDatabase):
         stats: ProcessingStats,
         *,
         recovery: bool = False,
+        metrics=None,
     ) -> None:
         if self.fail_publish:
             raise RuntimeError("simulated publication rollback")
@@ -255,6 +261,7 @@ def settings(tmp_path: Path) -> Settings:
         db_connect_timeout=15,
         db_read_timeout=600,
         db_write_timeout=600,
+        search_publication_lock_timeout=10,
         control_database="kp_control_test",
         bronze_database="kp_bronze_test",
         silver_database="kp_silver_test",
