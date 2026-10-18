@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "document_pattern": "^[0-9]{8}$",
+  "datasets": {
+    "CORREOS": {"headers": ["DOCUMENTO", "CORREO_ORIGINAL"], "placeholder_emails": ["sincorreo@sincorreo.com"], "email_max_length": 254},
+    "DIRECCIONES": {"headers": ["DOCUMENTO", "DIRECCION", "DEPARTAMENTO", "PROVINCIA", "DISTRITO", "DATA PROCEDENCIA"]},
+    "VEHICULOS": {"headers": ["DOCUMENTO", "NOMBRE COMPLETO", "CLASE", "COMPRA", "FABRICACION", "MARCA", "PLACA", "# TRANSFERENCIA"], "year_min": 1900, "year_max": 2100},
+    "PROPIEDADES": {"headers": ["DOCUMENTO", "PARTIDA_REGISTRAL", "ZONA_REGISTRAL", "OFICINA"]}
+  }
+}

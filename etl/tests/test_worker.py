@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,8 @@ from src.domain.errors import (
 )
 from src.domain.models import CellValue, SourceRow
 from src.loaders.pagos_loader import PaymentLoader
+from src.worker import JsonFormatter, safe_diagnostic
+import pymysql
 
 from .conftest import FakeDatabase, make_batch, stage_file
 
@@ -215,3 +219,89 @@ def test_large_iterator_is_consumed_in_bounded_chunks(settings, tmp_path: Path) 
     assert result.stats.file_rows == 10001
     assert database.chunk_sizes == [(5000, 0), (5000, 0), (1, 0)]
     assert [progress.file_rows for progress in database.progress] == [5000, 10000, 10001]
+
+
+def test_worker_json_formatter_never_serializes_exception_tracebacks() -> None:
+    record = logging.LogRecord(
+        name="kpdm.etl",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="worker_crashed",
+        args=(),
+        exc_info=(RuntimeError, RuntimeError("PASSWORD=secret"), None),
+    )
+
+    payload = JsonFormatter().format(record)
+
+    assert '"event": "worker_crashed"' in payload
+    assert "PASSWORD=secret" not in payload
+    assert "exception" not in payload
+
+
+def test_worker_json_formatter_emits_search_phase_metric_as_one_json_line() -> None:
+    record = logging.LogRecord(
+        name="kpdm.etl.search",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="search_phase_metric",
+        args=(),
+        exc_info=None,
+    )
+    record.context = {
+        "batch_id": 42,
+        "dataset_code": "FAMILIA",
+        "refresh_mode": "FULL_REPLACE",
+        "phase": "gold_insert",
+        "duration_seconds": 2.5,
+        "rows_processed": 41040,
+        "rows_per_second": 16416.0,
+        "logical_statement_count": 1,
+        "executemany_calls": 0,
+        "physical_statement_count": 1,
+        "invocations": 1,
+        "peak_memory_mb": None,
+        "successful": True,
+    }
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["event"] == "search_phase_metric"
+    assert payload["batch_id"] == 42
+    assert payload["phase"] == "gold_insert"
+    assert payload["duration_seconds"] == 2.5
+    assert payload["rows_processed"] == 41040
+    assert "documento" not in payload
+    assert "sql" not in payload
+
+
+def test_interface_error_diagnostic_preserves_zero_code_and_hides_driver_message() -> None:
+    class Database:
+        connection_phase = "execute"
+
+    diagnostic = safe_diagnostic(pymysql.err.InterfaceError(0, "PASSWORD=secret"), Database())
+
+    assert diagnostic == {
+        "error_code": 0,
+        "db_driver": "pymysql",
+        "connection_phase": "execute",
+        "retryable": True,
+    }
+
+
+def test_operational_error_2013_is_retryable_without_exposing_the_driver_message() -> None:
+    class Database:
+        connection_phase = "execute"
+
+    diagnostic = safe_diagnostic(
+        pymysql.err.OperationalError(2013, "sensitive driver message"),
+        Database(),
+    )
+
+    assert diagnostic == {
+        "error_code": 2013,
+        "db_driver": "pymysql",
+        "connection_phase": "execute",
+        "retryable": True,
+    }

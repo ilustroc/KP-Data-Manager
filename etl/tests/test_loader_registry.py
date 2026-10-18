@@ -6,8 +6,9 @@ from src.domain.errors import StructuralFileError
 from src.loaders.cartera_loader import CarteraLoader
 from src.loaders.pagos_loader import PaymentLoader
 from src.loaders.registry import LoaderRegistry
+from src.loaders.search_loader import SearchLoader
 
-from .conftest import FakeCarteraDatabase, FakeDatabase, make_batch
+from .conftest import FakeCarteraDatabase, FakeDatabase, FakeSearchDatabase, make_batch
 
 
 def test_registry_keeps_payments_loader_unchanged(settings):
@@ -85,3 +86,20 @@ def test_registry_rejects_portfolio_without_supported_profile(settings):
 
     with pytest.raises(StructuralFileError, match="perfil soportado"):
         LoaderRegistry().resolve(database.batch, database, settings)
+
+
+def test_registry_routes_personas_search_to_separate_loader(settings):
+    database = FakeSearchDatabase(
+        make_batch(
+            tipo="SEARCH",
+            perfil_version="1",
+            dataset_code="PERSONAS",
+            source_code="BASE_PERSONAS",
+            refresh_mode="FULL_REPLACE",
+            mapping_version=1,
+        )
+    )
+
+    loader = LoaderRegistry().resolve(database.batch, database, settings)
+
+    assert isinstance(loader, SearchLoader)

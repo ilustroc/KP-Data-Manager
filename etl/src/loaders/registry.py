@@ -4,10 +4,11 @@ from typing import Callable, Protocol, cast
 
 from ..config import Settings
 from ..domain.errors import StructuralFileError
-from ..domain.models import BatchRecord, CarteraDatabasePort, DatabasePort
+from ..domain.models import BatchRecord, CarteraDatabasePort, DatabasePort, SearchDatabasePort
 from ..profiles.registry import ProfileRegistry
 from .cartera_loader import CarteraLoader
 from .pagos_loader import PaymentLoader
+from .search_loader import SearchLoader
 
 
 class BatchLoader(Protocol):
@@ -27,6 +28,7 @@ class LoaderRegistry:
         factories: dict[str, Callable[[], BatchLoader]] = {
             "PAGOS": lambda: PaymentLoader(database, settings),
             "CARTERA": lambda: self._cartera_loader(batch, database, settings),
+            "SEARCH": lambda: SearchLoader(cast(SearchDatabasePort, database), settings),
         }
         factory = factories.get(batch.tipo)
         if factory is None:

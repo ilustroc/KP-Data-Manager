@@ -22,6 +22,7 @@ class ProcessImportBatchTest extends ImportFeatureTestCase
             'etl.python_binary' => PHP_BINARY,
             'etl.workdir' => base_path('etl'),
             'etl.process_timeout_seconds' => 3600,
+            'etl.job_timeout_seconds' => 3660,
             'etl.queue' => 'etl',
         ]);
     }
@@ -33,7 +34,7 @@ class ProcessImportBatchTest extends ImportFeatureTestCase
         $this->assertInstanceOf(ShouldBeUnique::class, $job);
         $this->assertSame('27', $job->uniqueId());
         $this->assertSame(1, $job->tries);
-        $this->assertSame(3600, $job->timeout);
+        $this->assertSame(3660, $job->timeout);
         $this->assertTrue($job->failOnTimeout);
         $this->assertSame('etl', $job->queue);
     }
@@ -102,5 +103,30 @@ class ProcessImportBatchTest extends ImportFeatureTestCase
         $batch = $this->batchRow($batchId);
         $this->assertSame(ImportStatus::Error->value, $batch->estado);
         $this->assertSame('No fue posible iniciar el procesamiento.', $batch->mensaje_error);
+    }
+
+    public function test_failed_callback_marks_processing_batch_as_error_without_exposing_worker_output(): void
+    {
+        $batchId = $this->createBatch(['estado' => ImportStatus::Processing->value]);
+
+        (new ProcessImportBatch($batchId))->failed(new EtlProcessFailed('PASSWORD=secret'));
+
+        $batch = $this->batchRow($batchId);
+        $this->assertSame(ImportStatus::Error->value, $batch->estado);
+        $this->assertSame('El procesamiento ETL terminó con error. Revisa el log técnico.', $batch->mensaje_error);
+    }
+
+    public function test_failed_callback_does_not_overwrite_terminal_batch_status(): void
+    {
+        $batchId = $this->createBatch([
+            'estado' => ImportStatus::Completed->value,
+            'mensaje_error' => null,
+        ]);
+
+        (new ProcessImportBatch($batchId))->failed(new EtlProcessFailed('worker failed'));
+
+        $batch = $this->batchRow($batchId);
+        $this->assertSame(ImportStatus::Completed->value, $batch->estado);
+        $this->assertNull($batch->mensaje_error);
     }
 }

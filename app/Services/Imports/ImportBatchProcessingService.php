@@ -31,6 +31,35 @@ final class ImportBatchProcessingService
             ]) === 1;
     }
 
+    public function markFailedIfNonTerminal(int $batchId): bool
+    {
+        return $this->connection()
+            ->table(config('imports.table'))
+            ->where('batch_id', $batchId)
+            ->whereIn('estado', [
+                ImportStatus::Pending->value,
+                ImportStatus::Processing->value,
+            ])
+            ->update([
+                'estado' => ImportStatus::Error->value,
+                'fecha_fin' => now('UTC')->format('Y-m-d H:i:s'),
+                'mensaje_error' => 'El procesamiento ETL terminó con error. Revisa el log técnico.',
+            ]) === 1;
+    }
+
+    public function markSearchRecoveryFailureIfProcessing(int $batchId): bool
+    {
+        return $this->connection()
+            ->table(config('imports.table'))
+            ->where('batch_id', $batchId)
+            ->where('estado', ImportStatus::Processing->value)
+            ->update([
+                'estado' => ImportStatus::Error->value,
+                'fecha_fin' => now('UTC')->format('Y-m-d H:i:s'),
+                'mensaje_error' => 'No fue posible recuperar la publicación Gold SEARCH. Revisa el log técnico.',
+            ]) === 1;
+    }
+
     private function connection(): ConnectionInterface
     {
         return DB::connection(config('imports.connection'));

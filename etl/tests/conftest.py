@@ -14,6 +14,11 @@ from src.domain.models import (
     PaymentRecord,
     ProcessingStats,
     RowError,
+    SearchFamilyRecord,
+    SearchPersonRecord,
+    SearchNormalizedRecord,
+    SearchPhoneRecord,
+    SearchRawRecord,
 )
 
 
@@ -56,6 +61,10 @@ class FakeDatabase:
             archivo_sha256=self.batch.archivo_sha256,
             entidad=self.batch.entidad,
             perfil_version=self.batch.perfil_version,
+            dataset_code=self.batch.dataset_code,
+            source_code=self.batch.source_code,
+            refresh_mode=self.batch.refresh_mode,
+            mapping_version=self.batch.mapping_version,
         )
         return True
 
@@ -118,12 +127,127 @@ class FakeCarteraDatabase(FakeDatabase):
         self.errors.extend(errors)
 
 
+class FakeSearchDatabase(FakeDatabase):
+    def __init__(self, batch: BatchRecord | None, *, fail_publish: bool = False) -> None:
+        super().__init__(batch)
+        self.fail_publish = fail_publish
+        self.raw_records: list[SearchRawRecord] = []
+        self.persons: list[SearchPersonRecord] = []
+        self.phones: list[SearchPhoneRecord] = []
+        self.families: list[SearchFamilyRecord] = []
+        self.scope: set[str] = set()
+        self.record_keys: set[tuple[str, ...]] = set()
+        self.published = False
+        self.search_error_finished = False
+        self.recovery_stats: ProcessingStats | None = None
+        self.recovery_preflight_calls = 0
+        self.recovery_publish_calls = 0
+        self.recovery_failure_marked = False
+        self.mapping = [
+            {
+                "source_position": position,
+                "source_column": source,
+                "target_column": target,
+                "is_required": target == "documento",
+                "transformation": "PERSONAS_V1",
+                "default_value": None,
+            }
+            for position, (source, target) in enumerate(
+                (
+                    ("DOCUMENTO", "documento"),
+                    ("PATERNO", "paterno"),
+                    ("MATERNO", "materno"),
+                    ("NOMBRES", "nombres"),
+                    ("NACIMIENTO", "fecha_nacimiento"),
+                    ("DIRECCION", "direccion_origen"),
+                    ("SEXO", "sexo"),
+                    ("ESTADO CIVIL", "estado_civil"),
+                    ("PADRE", "padre"),
+                    ("MADRE", "madre"),
+                ),
+                start=1,
+            )
+        ]
+
+    def get_search_mapping(self, batch: BatchRecord):
+        return self.mapping
+
+    def existing_search_record_keys(
+        self,
+        batch: BatchRecord,
+        records: Sequence[SearchNormalizedRecord],
+    ) -> set[tuple[str, ...]]:
+        return {
+            record.deduplication_key
+            for record in records
+            if record.deduplication_key in self.record_keys
+        }
+
+    def insert_search_chunk(
+        self,
+        raw_records: Sequence[SearchRawRecord],
+        records: Sequence[SearchNormalizedRecord],
+        errors: Sequence[RowError],
+        scope_documents: Sequence[str],
+        *,
+        metrics=None,
+    ) -> int:
+        self.raw_records.extend(raw_records)
+        self.persons.extend(
+            record for record in records if isinstance(record, SearchPersonRecord)
+        )
+        self.phones.extend(record for record in records if isinstance(record, SearchPhoneRecord))
+        self.families.extend(record for record in records if isinstance(record, SearchFamilyRecord))
+        previous_scope_count = len(self.scope)
+        self.scope.update(scope_documents)
+        self.record_keys.update(record.deduplication_key for record in records)
+        self.errors.extend(errors)
+        return len(self.scope) - previous_scope_count
+
+    def finish_search_with_errors(
+        self,
+        batch_id: int,
+        finished_at: datetime,
+        stats: ProcessingStats,
+    ) -> None:
+        self.search_error_finished = True
+        self.finished_status = "COMPLETADO_CON_ERRORES"
+        self.final_stats = copy_stats(stats)
+
+    def preflight_search_recovery(self, batch: BatchRecord, *, metrics=None) -> ProcessingStats:
+        self.recovery_preflight_calls += 1
+        if self.recovery_stats is None:
+            raise RuntimeError("missing recovery preflight")
+        return copy_stats(self.recovery_stats)
+
+    def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None:
+        self.recovery_failure_marked = True
+
+    def publish_search(
+        self,
+        batch: BatchRecord,
+        published_at: datetime,
+        stats: ProcessingStats,
+        *,
+        recovery: bool = False,
+        metrics=None,
+    ) -> None:
+        if self.fail_publish:
+            raise RuntimeError("simulated publication rollback")
+        if recovery:
+            self.recovery_publish_calls += 1
+        self.published = True
+        self.finished_status = "COMPLETADO"
+        self.final_stats = copy_stats(stats)
+
+
 def copy_stats(stats: ProcessingStats) -> ProcessingStats:
     return ProcessingStats(
         file_rows=stats.file_rows,
         inserted_rows=stats.inserted_rows,
         error_rows=stats.error_rows,
         duplicate_rows=stats.duplicate_rows,
+        scope_count=stats.scope_count,
     )
 
 
@@ -134,9 +258,14 @@ def settings(tmp_path: Path) -> Settings:
         db_port=3306,
         db_username="kp_data_manager_etl",
         db_password="test-only",
+        db_connect_timeout=15,
+        db_read_timeout=600,
+        db_write_timeout=600,
+        search_publication_lock_timeout=10,
         control_database="kp_control_test",
         bronze_database="kp_bronze_test",
         silver_database="kp_silver_test",
+        gold_database="kp_gold_test",
         storage_root=tmp_path / "imports",
         insert_batch_size=5,
         progress_update_every=5,
@@ -166,6 +295,10 @@ def make_batch(
     tipo: str = "PAGOS",
     entidad: str | None = None,
     perfil_version: str | None = None,
+    dataset_code: str | None = None,
+    source_code: str | None = None,
+    refresh_mode: str | None = None,
+    mapping_version: int | None = None,
 ) -> BatchRecord:
     return BatchRecord(
         batch_id=batch_id,
@@ -177,4 +310,8 @@ def make_batch(
         archivo_sha256=sha256,
         entidad=entidad,
         perfil_version=perfil_version,
+        dataset_code=dataset_code,
+        source_code=source_code,
+        refresh_mode=refresh_mode,
+        mapping_version=mapping_version,
     )

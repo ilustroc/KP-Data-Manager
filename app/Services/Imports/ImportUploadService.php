@@ -299,6 +299,12 @@ class ImportUploadService
 
     private function validateProfileSelection(ImportType $type, ?FinancialEntity $entity): void
     {
+        if ($type === ImportType::Search) {
+            throw new InvalidImportFile(
+                'Las cargas SEARCH requieren el flujo de preview, mapping y confirmación.',
+            );
+        }
+
         if ($type === ImportType::Portfolio && ($entity === null || ! $entity->isImplemented())) {
             throw new InvalidImportFile('La carga de cartera requiere una entidad con perfil implementado.');
         }

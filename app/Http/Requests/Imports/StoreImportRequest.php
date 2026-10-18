@@ -26,7 +26,11 @@ class StoreImportRequest extends FormRequest
         $extensions = implode(',', config('imports.allowed_extensions'));
 
         return [
-            'tipo' => ['required', Rule::enum(ImportType::class)],
+            'tipo' => [
+                'required',
+                Rule::enum(ImportType::class),
+                Rule::in(config('imports.registration_types', [])),
+            ],
             'entidad' => ['nullable', Rule::enum(FinancialEntity::class)],
             'origen' => ['required', Rule::enum(ImportOrigin::class)],
             'archivo' => ['required', 'file', "extensions:{$extensions}", "max:{$maximumKilobytes}"],
@@ -72,6 +76,7 @@ class StoreImportRequest extends FormRequest
         return [
             'tipo.required' => 'Selecciona el tipo de carga.',
             'tipo.enum' => 'El tipo de carga no es válido.',
+            'tipo.in' => 'Este tipo de carga todavía no está habilitado en el flujo de registro.',
             'entidad.enum' => 'La entidad financiera seleccionada no es válida.',
             'origen.required' => 'Selecciona el origen de la carga.',
             'origen.enum' => 'El origen seleccionado no es válido.',

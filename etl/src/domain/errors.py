@@ -20,3 +20,12 @@ class StructuralFileError(EtlError):
 
 class FileSecurityError(EtlError):
     """Raised when a stored path or file fingerprint is unsafe."""
+
+
+class SearchRecoveryError(EtlError):
+    """Raised when a publish-only SEARCH recovery cannot complete safely."""
+
+    def __init__(self, stage: str, cause: Exception) -> None:
+        super().__init__("No fue posible recuperar la publicación SEARCH.")
+        self.stage = stage
+        self.cause = cause

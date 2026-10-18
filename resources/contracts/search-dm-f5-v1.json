@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "document_pattern": "^[0-9]{8}$",
+  "period_pattern": "^[0-9]{6}$",
+  "period_year_min": 1900,
+  "period_year_max": 2100,
+  "sbs_conditions": ["NOR", "CPP", "DEF", "DUD", "PER"],
+  "sbs_percentage_min": "0",
+  "sbs_percentage_max": "100",
+  "sbs_percentage_total_min": "99.50",
+  "sbs_percentage_total_max": "100.50",
+  "sbs_detail_shift": {
+    "condition_from": "TIPO_CREDITO",
+    "amount_from": "CONDICION",
+    "days_from": "MONTO",
+    "requires_days_atraso_empty": true
+  },
+  "datasets": {
+    "SBS_RESUMEN": {
+      "headers": ["COD_SBS", "FECHA_REPORTE_SBS", "DOCUMENTO", "CANTIDAD_EMPRESAS", "CALIFICACION_NORMAL", "CALIFICACION_CPP", "CALIFICACION_DEFICIENTE", "CALIFICACION_DUDOSO", "CALIFICACION_PERDIDAD"]
+    },
+    "SBS_DETALLE": {
+      "headers": ["FECHA_REPORTE_SBS", "DOCUMENTO", "COD_SBS", "ENTIDAD", "TIPO_CREDITO", "CONDICION", "MONTO", "DIAS_ATRASO"]
+    },
+    "LABORAL_ESSALUD": {
+      "headers": ["DOCUMENTO", "FECHA", "RUC", "NOMBRE EMPRESA", "SUELDO", "SITUACION"]
+    }
+  }
+}

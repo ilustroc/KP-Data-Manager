@@ -51,9 +51,14 @@ class Settings:
     db_port: int
     db_username: str
     db_password: str
+    db_connect_timeout: int
+    db_read_timeout: int
+    db_write_timeout: int
+    search_publication_lock_timeout: int
     control_database: str
     bronze_database: str
     silver_database: str
+    gold_database: str
     storage_root: Path
     insert_batch_size: int
     progress_update_every: int
@@ -84,9 +89,17 @@ class Settings:
             db_port=_positive_integer("ETL_DB_PORT", 3306),
             db_username=username,
             db_password=os.getenv("ETL_DB_PASSWORD", ""),
+            db_connect_timeout=_positive_integer("ETL_DB_CONNECT_TIMEOUT", 15),
+            db_read_timeout=_positive_integer("ETL_DB_READ_TIMEOUT", 600),
+            db_write_timeout=_positive_integer("ETL_DB_WRITE_TIMEOUT", 600),
+            search_publication_lock_timeout=_positive_integer(
+                "ETL_SEARCH_PUBLICATION_LOCK_TIMEOUT",
+                10,
+            ),
             control_database=_database_identifier("ETL_CONTROL_DATABASE", "kp_control"),
             bronze_database=_database_identifier("ETL_BRONZE_DATABASE", "kp_bronze"),
             silver_database=_database_identifier("ETL_SILVER_DATABASE", "kp_silver"),
+            gold_database=_database_identifier("ETL_GOLD_DATABASE", "kp_gold"),
             storage_root=storage_root.resolve(),
             insert_batch_size=_positive_integer("ETL_INSERT_BATCH_SIZE", 5000),
             progress_update_every=_positive_integer("ETL_PROGRESS_UPDATE_EVERY", 5000),

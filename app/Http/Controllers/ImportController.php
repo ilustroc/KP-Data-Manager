@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DatasetCode;
 use App\FinancialEntity;
 use App\Http\Requests\Imports\ImportIndexRequest;
 use App\Http\Requests\Imports\StoreImportRequest;
@@ -18,6 +19,7 @@ use App\Services\Imports\ImportFileService;
 use App\Services\Imports\ImportRegistrationFailed;
 use App\Services\Imports\ImportUploadService;
 use App\Services\Imports\InvalidImportFile;
+use App\Services\Imports\SearchSourceCatalogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -37,13 +39,31 @@ class ImportController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(SearchSourceCatalogService $sources): View
     {
+        $registrationTypes = config('imports.registration_types', []);
+        $searchSources = [];
+        if ((bool) config('imports.search.registration_enabled')) {
+            foreach (config('imports.search.available_datasets', []) as $datasetCode) {
+                $dataset = DatasetCode::tryFrom($datasetCode);
+                if ($dataset !== null) {
+                    $searchSources[$dataset->value] = $sources->activeForDataset($dataset);
+                }
+            }
+        }
+
         return view('imports.create', [
-            'types' => ImportType::cases(),
+            'types' => array_values(array_filter(
+                ImportType::cases(),
+                static fn (ImportType $type): bool => $type !== ImportType::Search
+                    && in_array($type->value, $registrationTypes, true),
+            )),
             'entities' => FinancialEntity::cases(),
             'origins' => ImportOrigin::cases(),
             'maximumUploadMegabytes' => (int) config('imports.max_web_upload_mb'),
+            'searchEnabled' => (bool) config('imports.search.registration_enabled'),
+            'searchDatasets' => DatasetCode::cases(),
+            'searchSources' => $searchSources,
         ]);
     }
 

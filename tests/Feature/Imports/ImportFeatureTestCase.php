@@ -30,6 +30,18 @@ abstract class ImportFeatureTestCase extends TestCase
             'imports.storage_disk' => 'imports',
             'imports.max_web_upload_mb' => 50,
             'imports.allowed_extensions' => ['csv', 'xlsx'],
+            'imports.registration_types' => ['PAGOS', 'CARTERA'],
+            'imports.search.control_connection' => 'sqlite',
+            'imports.search.bronze_connection' => 'sqlite',
+            'imports.search.scope_insert_chunk_size' => 2,
+            'imports.search.tables' => [
+                'datasets' => 'import_dataset',
+                'sources' => 'import_source',
+                'dataset_sources' => 'import_dataset_source',
+                'column_mappings' => 'import_column_mapping',
+                'scope_documents' => 'import_scope_document',
+                'raw_rows' => 'search_raw_row',
+            ],
             'imports.deletion.audit_table' => 'import_deletion_log',
             'imports.deletion.entity_tables' => [
                 'BBVA' => [
@@ -147,6 +159,12 @@ abstract class ImportFeatureTestCase extends TestCase
     private function createImportSchema(): void
     {
         foreach ([
+            'import_scope_document',
+            'import_column_mapping',
+            'import_dataset_source',
+            'import_source',
+            'import_dataset',
+            'search_raw_row',
             'import_deletion_log',
             'raw_cartera_confianza',
             'raw_cartera_wandoo',
@@ -174,6 +192,9 @@ abstract class ImportFeatureTestCase extends TestCase
             $table->string('tipo', 50);
             $table->string('entidad', 50)->nullable();
             $table->string('perfil_version', 20)->nullable();
+            $table->string('dataset_code', 50)->nullable();
+            $table->string('source_code', 64)->nullable();
+            $table->string('refresh_mode', 20)->nullable();
             $table->string('origen', 50)->nullable();
             $table->string('archivo');
             $table->string('archivo_original')->nullable();
@@ -190,6 +211,16 @@ abstract class ImportFeatureTestCase extends TestCase
             $table->unsignedBigInteger('filas_insertadas')->default(0);
             $table->unsignedBigInteger('filas_duplicadas')->default(0);
             $table->unsignedBigInteger('filas_error')->default(0);
+            $table->unsignedBigInteger('rows_valid')->nullable();
+            $table->unsignedBigInteger('rows_invalid')->nullable();
+            $table->unsignedBigInteger('rows_published')->nullable();
+            $table->unsignedBigInteger('scope_count')->nullable();
+            $table->dateTime('received_at')->nullable();
+            $table->dateTime('validated_at')->nullable();
+            $table->dateTime('published_at')->nullable();
+            $table->unsignedBigInteger('uploaded_by_user_id')->nullable();
+            $table->unsignedInteger('mapping_version')->nullable();
+            $table->string('idempotency_key', 64)->nullable()->unique();
             $table->string('usuario', 100)->nullable();
             $table->text('mensaje_error')->nullable();
         });
@@ -222,6 +253,77 @@ abstract class ImportFeatureTestCase extends TestCase
             $table->dateTime('deleted_at');
             $table->boolean('file_deleted')->default(false);
             $table->string('warning', 500)->nullable();
+        });
+
+        Schema::connection('sqlite')->create('import_dataset', function (Blueprint $table): void {
+            $table->string('dataset_code', 50)->primary();
+            $table->string('label', 100);
+            $table->string('description', 500)->nullable();
+            $table->unsignedSmallInteger('sort_order')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->dateTime('created_at');
+            $table->dateTime('updated_at');
+        });
+
+        Schema::connection('sqlite')->create('import_source', function (Blueprint $table): void {
+            $table->string('source_code', 64)->primary();
+            $table->string('label', 150);
+            $table->string('description', 500)->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->dateTime('created_at');
+            $table->dateTime('updated_at');
+        });
+
+        Schema::connection('sqlite')->create('import_dataset_source', function (Blueprint $table): void {
+            $table->string('dataset_code', 50);
+            $table->string('source_code', 64);
+            $table->string('default_refresh_mode', 20);
+            $table->boolean('allows_full_replace')->default(false);
+            $table->boolean('allows_scope_replace')->default(false);
+            $table->boolean('allows_upsert')->default(false);
+            $table->unsignedInteger('current_mapping_version')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->dateTime('created_at');
+            $table->dateTime('updated_at');
+            $table->primary(['dataset_code', 'source_code']);
+        });
+
+        Schema::connection('sqlite')->create('import_column_mapping', function (Blueprint $table): void {
+            $table->id('mapping_id');
+            $table->string('dataset_code', 50);
+            $table->string('source_code', 64);
+            $table->unsignedInteger('mapping_version');
+            $table->unsignedSmallInteger('source_position');
+            $table->string('source_column');
+            $table->string('target_column', 100);
+            $table->boolean('is_required')->default(false);
+            $table->string('transformation', 100)->nullable();
+            $table->text('default_value')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->dateTime('created_at');
+            $table->dateTime('updated_at');
+            $table->unique(['dataset_code', 'source_code', 'mapping_version', 'source_position']);
+            $table->unique(['dataset_code', 'source_code', 'mapping_version', 'target_column']);
+        });
+
+        Schema::connection('sqlite')->create('import_scope_document', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('batch_id');
+            $table->string('documento', 100);
+            $table->dateTime('created_at');
+            $table->unique(['batch_id', 'documento']);
+        });
+
+        Schema::connection('sqlite')->create('search_raw_row', function (Blueprint $table): void {
+            $table->id('raw_id');
+            $table->unsignedBigInteger('batch_id');
+            $table->string('dataset_code', 50);
+            $table->string('source_code', 64);
+            $table->unsignedBigInteger('source_row');
+            $table->string('source_file');
+            $table->json('raw_payload');
+            $table->string('row_hash', 64);
+            $table->dateTime('ingested_at');
         });
 
         foreach ([

@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, Mapping, Protocol, Sequence
+
+if TYPE_CHECKING:
+    from ..metrics import SearchMetrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +21,10 @@ class BatchRecord:
     archivo_sha256: str | None
     entidad: str | None = None
     perfil_version: str | None = None
+    dataset_code: str | None = None
+    source_code: str | None = None
+    refresh_mode: str | None = None
+    mapping_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +39,336 @@ class CellValue:
 class SourceRow:
     number: int
     values: Mapping[str, CellValue]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSourceRow:
+    number: int
+    headers: tuple[str, ...]
+    cells: tuple[CellValue, ...]
+    mapped_values: Mapping[str, CellValue]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchRawRecord:
+    batch_id: int
+    dataset_code: str
+    source_code: str
+    source_row: int
+    source_file: str
+    raw_payload: str
+    row_hash: str
+    ingested_at: datetime
+
+    def as_insert_tuple(self) -> tuple[Any, ...]:
+        return (
+            self.batch_id,
+            self.dataset_code,
+            self.source_code,
+            self.source_row,
+            self.source_file,
+            self.raw_payload,
+            self.row_hash,
+            self.ingested_at,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPersonRecord:
+    source_row: int
+    documento: str
+    paterno: str | None
+    materno: str | None
+    nombres: str | None
+    nombre_completo: str | None
+    fecha_nacimiento: date | None
+    direccion_origen: str | None
+    sexo: str | None
+    estado_civil: str | None
+    padre: str | None
+    madre: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (
+            self.documento,
+            self.paterno,
+            self.materno,
+            self.nombres,
+            self.nombre_completo,
+            self.fecha_nacimiento,
+            self.direccion_origen,
+            self.sexo,
+            self.estado_civil,
+            self.padre,
+            self.madre,
+            self.source_code,
+            self.batch_id,
+            source_raw_id,
+            self.record_hash,
+            self.created_at,
+        )
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.documento,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPhoneRecord:
+    source_row: int
+    documento: str
+    telefono: str
+    operador: str
+    operador_raw: str
+    fecha_data: date
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (
+            self.documento,
+            self.telefono,
+            self.operador,
+            self.operador_raw,
+            self.fecha_data,
+            self.source_code,
+            self.batch_id,
+            source_raw_id,
+            self.record_hash,
+            self.created_at,
+        )
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.documento, self.telefono)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchFamilyRecord:
+    source_row: int
+    documento: str
+    documento_familiar: str | None
+    paterno_familiar: str | None
+    materno_familiar: str | None
+    nombres_familiar: str | None
+    nacimiento_familiar: str | None
+    tipo_familiar: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (
+            self.documento,
+            self.documento_familiar,
+            self.paterno_familiar,
+            self.materno_familiar,
+            self.nombres_familiar,
+            self.nacimiento_familiar,
+            self.tipo_familiar,
+            self.source_code,
+            self.batch_id,
+            self.source_row,
+            source_raw_id,
+            self.record_hash,
+            self.created_at,
+        )
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (str(self.source_row),)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchEmailRecord:
+    source_row: int
+    documento: str
+    correo: str
+    correo_original: str
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.correo, self.correo_original, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchAddressRecord:
+    source_row: int
+    documento: str
+    direccion: str | None
+    departamento: str | None
+    provincia: str | None
+    distrito: str | None
+    data_procedencia: str | None
+    procedencia_anio: int | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.direccion, self.departamento, self.provincia, self.distrito, self.data_procedencia, self.procedencia_anio, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchVehicleRecord:
+    source_row: int
+    documento: str
+    nombre_completo_fuente: str | None
+    clase: str | None
+    anio_compra: int | None
+    anio_fabricacion: int | None
+    marca: str | None
+    placa: str | None
+    placa_original: str | None
+    numero_transferencias: int | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.nombre_completo_fuente, self.clase, self.anio_compra, self.anio_fabricacion, self.marca, self.placa, self.placa_original, self.numero_transferencias, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+    @property
+    def conflict_key(self) -> tuple[str, str] | None:
+        return None if self.placa is None else (self.documento, self.placa)
+
+    @property
+    def conflict_signature(self) -> tuple[object, ...]:
+        return (self.nombre_completo_fuente, self.clase, self.anio_compra, self.anio_fabricacion, self.marca, self.numero_transferencias)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPropertyRecord:
+    source_row: int
+    documento: str
+    partida_registral: str
+    zona_registral: str | None
+    oficina: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.partida_registral, self.zona_registral, self.oficina, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+    @property
+    def conflict_key(self) -> tuple[str, str]:
+        return (self.documento, self.partida_registral)
+
+    @property
+    def conflict_signature(self) -> tuple[object, ...]:
+        return (self.zona_registral, self.oficina)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSbsSummaryRecord:
+    source_row: int
+    documento: str
+    cod_sbs: str
+    fecha_reporte_sbs: str
+    cantidad_empresas: int
+    calificacion_normal: Decimal | None
+    calificacion_cpp: Decimal | None
+    calificacion_deficiente: Decimal | None
+    calificacion_dudoso: Decimal | None
+    calificacion_perdida: Decimal | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.cod_sbs, self.fecha_reporte_sbs, self.cantidad_empresas, self.calificacion_normal, self.calificacion_cpp, self.calificacion_deficiente, self.calificacion_dudoso, self.calificacion_perdida, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+    @property
+    def conflict_key(self) -> tuple[str, str, str]:
+        return (self.documento, self.fecha_reporte_sbs, self.cod_sbs)
+
+    @property
+    def conflict_signature(self) -> tuple[object, ...]:
+        return (self.cantidad_empresas, self.calificacion_normal, self.calificacion_cpp, self.calificacion_deficiente, self.calificacion_dudoso, self.calificacion_perdida)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSbsDetailRecord:
+    source_row: int
+    fecha_reporte_sbs: str
+    documento: str
+    cod_sbs: str
+    entidad: str | None
+    tipo_credito: str | None
+    condicion: str | None
+    monto: Decimal | None
+    dias_atraso: int | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.fecha_reporte_sbs, self.documento, self.cod_sbs, self.entidad, self.tipo_credito, self.condicion, self.monto, self.dias_atraso, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchEssaludRecord:
+    source_row: int
+    documento: str
+    periodo: str
+    ruc: str
+    nombre_empresa: str | None
+    sueldo: Decimal | None
+    situacion: str | None
+    source_code: str
+    batch_id: int
+    record_hash: str
+    created_at: datetime
+
+    def as_insert_tuple(self, source_raw_id: int) -> tuple[Any, ...]:
+        return (self.documento, self.periodo, self.ruc, self.nombre_empresa, self.sueldo, self.situacion, self.source_code, self.batch_id, source_raw_id, self.record_hash, self.created_at)
+
+    @property
+    def deduplication_key(self) -> tuple[str, ...]:
+        return (self.record_hash,)
+
+
+SearchNormalizedRecord = SearchPersonRecord | SearchPhoneRecord | SearchFamilyRecord | SearchEmailRecord | SearchAddressRecord | SearchVehicleRecord | SearchPropertyRecord | SearchSbsSummaryRecord | SearchSbsDetailRecord | SearchEssaludRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -580,6 +917,26 @@ class PortfolioChunk:
         self.error_rows = 0
 
 
+@dataclass(slots=True)
+class SearchChunk:
+    raw_records: list[SearchRawRecord] = field(default_factory=list)
+    records: list[SearchNormalizedRecord] = field(default_factory=list)
+    scope_documents: list[str] = field(default_factory=list)
+    errors: list[RowError] = field(default_factory=list)
+    file_rows: int = 0
+    error_rows: int = 0
+    duplicate_rows: int = 0
+
+    def clear(self) -> None:
+        self.raw_records.clear()
+        self.records.clear()
+        self.scope_documents.clear()
+        self.errors.clear()
+        self.file_rows = 0
+        self.error_rows = 0
+        self.duplicate_rows = 0
+
+
 @dataclass(frozen=True, slots=True)
 class RowError:
     batch_id: int
@@ -606,6 +963,7 @@ class ProcessingStats:
     inserted_rows: int = 0
     error_rows: int = 0
     duplicate_rows: int = 0
+    scope_count: int = 0
 
 
 @dataclass(slots=True)
@@ -663,4 +1021,50 @@ class CarteraDatabasePort(DatabasePort, Protocol):
         self,
         records: Sequence[PortfolioRecord],
         errors: Sequence[RowError],
+    ) -> None: ...
+
+
+class SearchDatabasePort(DatabasePort, Protocol):
+    def preflight_search_recovery(
+        self,
+        batch: BatchRecord,
+        *,
+        metrics: SearchMetrics | None = None,
+    ) -> ProcessingStats: ...
+
+    def mark_search_recovery_failed(self, batch_id: int, finished_at: datetime) -> None: ...
+
+    def get_search_mapping(self, batch: BatchRecord) -> Sequence[Mapping[str, Any]]: ...
+
+    def existing_search_record_keys(
+        self,
+        batch: BatchRecord,
+        records: Sequence[SearchNormalizedRecord],
+    ) -> set[tuple[str, ...]]: ...
+
+    def insert_search_chunk(
+        self,
+        raw_records: Sequence[SearchRawRecord],
+        records: Sequence[SearchNormalizedRecord],
+        errors: Sequence[RowError],
+        scope_documents: Sequence[str],
+        *,
+        metrics: SearchMetrics | None = None,
+    ) -> int: ...
+
+    def finish_search_with_errors(
+        self,
+        batch_id: int,
+        finished_at: datetime,
+        stats: ProcessingStats,
+    ) -> None: ...
+
+    def publish_search(
+        self,
+        batch: BatchRecord,
+        published_at: datetime,
+        stats: ProcessingStats,
+        *,
+        recovery: bool = False,
+        metrics: SearchMetrics | None = None,
     ) -> None: ...
