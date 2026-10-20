@@ -116,6 +116,31 @@ class SearchPersonasImportFlowTest extends ImportFeatureTestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_upsert_is_rejected_for_personas_even_if_the_catalog_flag_is_manually_enabled(): void
+    {
+        Storage::fake('imports');
+        Queue::fake([ProcessImportBatch::class]);
+        DB::connection('sqlite')->table('import_dataset_source')
+            ->where('dataset_code', 'PERSONAS')
+            ->where('source_code', 'BASE_PERSONAS')
+            ->update(['allows_upsert' => 1]);
+        $user = User::factory()->operator()->create();
+
+        $this->actingAs($user)
+            ->from(route('imports.create'))
+            ->post(route('imports.search.preview'), [
+                'dataset_code' => 'PERSONAS',
+                'source_code' => 'BASE_PERSONAS',
+                'refresh_mode' => 'UPSERT',
+                'archivo' => $this->personasCsv(),
+            ])
+            ->assertRedirect(route('imports.create'))
+            ->assertSessionHasErrors('archivo');
+
+        $this->assertDatabaseCount('import_batch', 0);
+        Queue::assertNothingPushed();
+    }
+
     public function test_manual_mapping_accepts_nonstandard_source_headers_after_explicit_confirmation(): void
     {
         Storage::fake('imports');

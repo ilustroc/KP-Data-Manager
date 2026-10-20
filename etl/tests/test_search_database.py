@@ -80,6 +80,7 @@ class PublicationCursor:
                     "source_code": self.active_source,
                     "allows_full_replace": int(self.modes_allowed),
                     "allows_scope_replace": int(self.modes_allowed),
+                    "allows_upsert": int(self.modes_allowed),
                 }
             ]
         return []
@@ -167,7 +168,12 @@ class RecoveryPreflightCursor:
         if "import_dataset_source" in self.last_sql:
             if not self.source_active:
                 return None
-            return {"source_code": "BASE_ESSALUD", "allows_full_replace": 1, "allows_scope_replace": 1}
+            return {
+                "source_code": "BASE_ESSALUD",
+                "allows_full_replace": 1,
+                "allows_scope_replace": 1,
+                "allows_upsert": 0,
+            }
         return None
 
 
@@ -593,6 +599,79 @@ def test_phone_full_replace_is_set_based_and_removes_stale_gold_in_same_transact
     assert "TRUNCATE" not in sql and "REPLACE INTO" not in sql and "INSERT IGNORE" not in sql
 
 
+def test_phone_upsert_inserts_new_pairs_and_updates_existing_pair_metadata_set_based(settings):
+    connection = PublicationConnection(active_source="BASE_TELEFONOS")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        phone_batch("UPSERT"),
+        datetime(2026, 10, 20, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+    assert "INSERT INTO `kp_gold_test`.`search_telefonos`" in sql
+    assert "FROM `kp_silver_test`.`search_telefonos`" in sql
+    assert "ON DUPLICATE KEY UPDATE" in sql
+    assert "operador = VALUES(operador)" in sql
+    assert "fecha_data = VALUES(fecha_data)" in sql
+    assert "source_code = VALUES(source_code)" in sql
+    assert "batch_id = VALUES(batch_id)" in sql
+    assert "updated_at = VALUES(updated_at)" in sql
+    assert connection.committed and not connection.rolled_back
+
+
+def test_phone_upsert_preserves_phones_missing_from_file_and_other_documents(settings):
+    connection = PublicationConnection(active_source="BASE_TELEFONOS")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        phone_batch("UPSERT"),
+        datetime(2026, 10, 20, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+    assert "DELETE FROM `kp_gold_test`.`search_telefonos`" not in sql
+    assert "DELETE gold FROM `kp_gold_test`.`search_telefonos`" not in sql
+    assert "TRUNCATE" not in sql
+
+
+def test_phone_upsert_is_idempotent_when_the_same_batch_is_published_again(settings):
+    connection = PublicationConnection(active_source="BASE_TELEFONOS")
+    database = database_with_connection(settings, connection)
+    current_batch = phone_batch("UPSERT")
+    stats = ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1)
+
+    database.publish_search(current_batch, datetime(2026, 10, 20, 12, 0), stats)
+    database.publish_search(current_batch, datetime(2026, 10, 20, 12, 1), stats)
+
+    inserts = [
+        sql
+        for sql in connection.publication_cursor.executed
+        if "INSERT INTO `kp_gold_test`.`search_telefonos`" in sql
+    ]
+    assert len(inserts) == 2
+    assert all("ON DUPLICATE KEY UPDATE" in sql for sql in inserts)
+    assert all("DELETE" not in sql for sql in inserts)
+
+
+def test_upsert_is_rejected_for_non_phone_dataset_before_transaction(settings):
+    connection = PublicationConnection()
+    database = database_with_connection(settings, connection)
+
+    with pytest.raises(RuntimeError, match="únicamente para TELEFONOS"):
+        database.publish_search(
+            batch("UPSERT"),
+            datetime(2026, 10, 20, 12, 0),
+            ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+        )
+
+    assert connection.began is False
+    assert connection.committed is False
+    assert connection.rolled_back is False
+
+
 def test_phone_gold_failure_rolls_back_without_partial_publication(settings):
     connection = PublicationConnection(
         fail_gold_insert=True,
@@ -612,6 +691,29 @@ def test_phone_gold_failure_rolls_back_without_partial_publication(settings):
         database.publish_search(
             phone_batch("SCOPE_REPLACE"),
             datetime(2026, 10, 15, 12, 0),
+            ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+        )
+
+    assert connection.committed is False
+    assert connection.rolled_back is True
+
+
+def test_phone_upsert_failure_rolls_back_without_partial_publication(settings):
+    connection = PublicationConnection(active_source="BASE_TELEFONOS")
+    database = database_with_connection(settings, connection)
+    original_execute = connection.publication_cursor.execute
+
+    def fail_phone_insert(sql, values=()):
+        if "INSERT INTO `kp_gold_test`.`search_telefonos`" in sql:
+            raise RuntimeError("simulated Gold failure")
+        return original_execute(sql, values)
+
+    connection.publication_cursor.execute = fail_phone_insert
+
+    with pytest.raises(RuntimeError, match="simulated Gold failure"):
+        database.publish_search(
+            phone_batch("UPSERT"),
+            datetime(2026, 10, 20, 12, 0),
             ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
         )
 
@@ -656,6 +758,28 @@ def test_publish_only_recovery_allows_error_batch_and_uses_the_same_transactiona
     sql = "\n".join(connection.publication_cursor.executed)
     assert "estado IN ('PROCESANDO', 'ERROR')" in sql
     assert "INSERT INTO `kp_gold_test`.`search_telefonos`" in sql
+    assert connection.committed and not connection.rolled_back
+
+
+def test_phone_upsert_recovery_is_idempotent_and_never_deletes_gold(settings):
+    connection = PublicationConnection(
+        active_source="BASE_TELEFONOS",
+        batch_status="ERROR",
+    )
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        phone_batch("UPSERT"),
+        datetime(2026, 10, 20, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+        recovery=True,
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+    assert "estado IN ('PROCESANDO', 'ERROR')" in sql
+    assert "ON DUPLICATE KEY UPDATE" in sql
+    assert "DELETE FROM `kp_gold_test`.`search_telefonos`" not in sql
+    assert "DELETE gold FROM `kp_gold_test`.`search_telefonos`" not in sql
     assert connection.committed and not connection.rolled_back
 
 

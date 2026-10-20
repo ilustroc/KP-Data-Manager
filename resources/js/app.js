@@ -72,6 +72,34 @@ const searchImportForm = document.querySelector('[data-search-import-form]');
 const searchDataset = document.querySelector('[data-search-dataset]');
 const searchSource = document.querySelector('[data-search-source]');
 const searchSourceNotice = document.querySelector('[data-search-source-notice]');
+const searchRefreshMode = document.querySelector('[data-search-refresh-mode]');
+
+const updateSearchRefreshModes = () => {
+    if (! (searchSource instanceof HTMLSelectElement)
+        || ! (searchRefreshMode instanceof HTMLSelectElement)) {
+        return;
+    }
+
+    const selectedSource = searchSource.selectedOptions.item(0);
+    let availableModes = 0;
+    searchRefreshMode.querySelectorAll('option[data-permission]').forEach((option) => {
+        const permission = option.dataset.permission;
+        const isAvailable = Boolean(
+            permission
+            && selectedSource?.dataset.dataset
+            && selectedSource.dataset[permission] === '1',
+        );
+        option.hidden = ! isAvailable;
+        option.disabled = ! isAvailable;
+        availableModes += Number(isAvailable);
+    });
+
+    const selectedMode = searchRefreshMode.selectedOptions.item(0);
+    if (selectedMode?.dataset.permission && selectedMode.disabled) {
+        searchRefreshMode.value = '';
+    }
+    searchRefreshMode.disabled = availableModes === 0;
+};
 
 const updateSearchSources = () => {
     if (! (searchImportForm instanceof HTMLFormElement)
@@ -97,9 +125,11 @@ const updateSearchSources = () => {
 
     searchSource.disabled = availableSources === 0;
     searchSourceNotice.classList.toggle('hidden', availableSources > 0);
+    updateSearchRefreshModes();
 };
 
 searchDataset?.addEventListener('change', updateSearchSources);
+searchSource?.addEventListener('change', updateSearchRefreshModes);
 updateSearchSources();
 
 const importDeletionDialog = document.querySelector('[data-import-deletion-dialog]');

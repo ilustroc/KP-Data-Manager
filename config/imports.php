@@ -32,6 +32,17 @@ return [
         ],
     ],
 
+    'private_files' => [
+        'enforce_before_dispatch' => filter_var(
+            env('IMPORT_ENFORCE_ETL_FILE_ACCESS', true),
+            FILTER_VALIDATE_BOOL,
+        ),
+        'etl_user' => env('IMPORT_ETL_USER'),
+        'shared_group' => env('IMPORT_SHARED_GROUP'),
+        'file_mode' => intval((string) env('IMPORT_FILE_MODE', '0640'), 8),
+        'directory_mode' => intval((string) env('IMPORT_DIRECTORY_MODE', '2750'), 8),
+    ],
+
     'pagination' => [
         'default' => 25,
         'allowed' => [25, 50, 100],

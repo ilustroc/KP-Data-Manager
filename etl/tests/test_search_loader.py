@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from src.domain.errors import BatchStateError, SearchRecoveryError, StructuralFileError
+from src.domain.errors import (
+    BatchStateError,
+    FileSecurityError,
+    SearchRecoveryError,
+    StructuralFileError,
+)
 from src.domain.models import ProcessingStats
 from src.loaders.search_loader import SearchLoader
 
@@ -90,6 +95,41 @@ def test_valid_personas_batch_writes_bronze_silver_scope_and_publishes(settings,
     assert len(database.persons) == 2
     assert database.scope == {"00003862", "00009743"}
     assert database.published is True
+
+
+def test_personas_upsert_is_rejected_before_claiming_the_batch(settings, tmp_path):
+    source = write_csv(
+        tmp_path,
+        "00003862,PEREZ,LOPEZ,ANA,2000-01-02,CALLE 1,2,SOLTERO,JUAN,MARIA\n",
+    )
+    _, sha256 = stage_file(settings, source, "2026/10/123/personas.csv")
+    database = FakeSearchDatabase(
+        personas_batch("2026/10/123/personas.csv", sha256, "UPSERT")
+    )
+
+    with pytest.raises(StructuralFileError, match="perfil SEARCH v1 publicable"):
+        SearchLoader(database, settings).process(123)
+
+    assert database.claimed is False
+    assert database.published is False
+
+
+def test_unreadable_private_file_is_rejected_before_batch_claim(settings, tmp_path, monkeypatch):
+    source = write_csv(
+        tmp_path,
+        "00003862,PEREZ,LOPEZ,ANA,2000-01-02,CALLE 1,2,SOLTERO,JUAN,MARIA\n",
+    )
+    _, sha256 = stage_file(settings, source, "2026/10/123/personas.csv")
+    database = FakeSearchDatabase(
+        personas_batch("2026/10/123/personas.csv", sha256)
+    )
+    monkeypatch.setattr("src.loaders.search_loader.os.access", lambda *_: False)
+
+    with pytest.raises(FileSecurityError, match="no es legible"):
+        SearchLoader(database, settings).process(123)
+
+    assert database.claimed is False
+    assert database.published is False
 
 
 @pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "SCOPE_REPLACE"])
@@ -362,6 +402,34 @@ def test_recovery_accepts_error_batch_and_propagates_publish_failure_safely(sett
     assert database.recovery_publish_calls == 0
     assert database.published is False
     assert database.recovery_failure_marked is True
+
+
+def test_phone_upsert_recovery_is_accepted_without_rewriting_history(settings):
+    batch = make_batch(
+        tipo="SEARCH",
+        status="ERROR",
+        perfil_version="1",
+        dataset_code="TELEFONOS",
+        source_code="BASE_TELEFONOS",
+        refresh_mode="UPSERT",
+        mapping_version=1,
+    )
+    database = FakeSearchDatabase(batch)
+    database.raw_records.append(object())
+    database.phones.append(object())
+    database.scope.add("00003862")
+    database.recovery_stats = ProcessingStats(
+        file_rows=1,
+        inserted_rows=1,
+        scope_count=1,
+    )
+    before = (len(database.raw_records), len(database.phones), len(database.scope))
+
+    result = SearchLoader(database, settings).recover_publish(123)
+
+    assert result.status == "COMPLETADO"
+    assert database.recovery_publish_calls == 1
+    assert (len(database.raw_records), len(database.phones), len(database.scope)) == before
 
 
 def test_recovery_preserves_preflight_failure_when_marking_error_also_fails(settings):

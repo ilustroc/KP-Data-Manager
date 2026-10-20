@@ -121,7 +121,13 @@
                                 <option value="">Selecciona una fuente</option>
                                 @foreach ($searchSources as $datasetCode => $sources)
                                     @foreach ($sources as $source)
-                                        <option value="{{ $source->source_code }}" data-dataset="{{ $datasetCode }}">{{ $source->label }} · {{ $datasetCode }}</option>
+                                        <option
+                                            value="{{ $source->source_code }}"
+                                            data-dataset="{{ $datasetCode }}"
+                                            data-full-replace="{{ (int) $source->allows_full_replace }}"
+                                            data-scope-replace="{{ (int) $source->allows_scope_replace }}"
+                                            data-upsert="{{ (int) $source->allows_upsert }}"
+                                        >{{ $source->label }} · {{ $datasetCode }}</option>
                                     @endforeach
                                 @endforeach
                             </select>
@@ -130,9 +136,11 @@
 
                         <label class="kp-label">
                             Modo de actualización
-                            <select name="refresh_mode" required class="kp-field normal-case tracking-normal">
-                                <option value="FULL_REPLACE">Reemplazo completo</option>
-                                <option value="SCOPE_REPLACE">Reemplazo por alcance</option>
+                            <select name="refresh_mode" required class="kp-field normal-case tracking-normal" data-search-refresh-mode>
+                                <option value="">Selecciona un modo</option>
+                                <option value="FULL_REPLACE" data-permission="fullReplace">Reemplazo completo</option>
+                                <option value="SCOPE_REPLACE" data-permission="scopeReplace">Reemplazo por alcance</option>
+                                <option value="UPSERT" data-permission="upsert">Actualización incremental (UPSERT)</option>
                             </select>
                         </label>
 

@@ -10,13 +10,19 @@ use Throwable;
 
 final class ImportBatchDispatcher
 {
-    public function __construct(private readonly CacheRepository $cache) {}
+    public function __construct(
+        private readonly CacheRepository $cache,
+        private readonly ImportFileAccessService $fileAccess,
+    ) {}
 
     public function dispatch(int $batchId): void
     {
         $job = new ProcessImportBatch($batchId);
 
         try {
+            if ((bool) config('imports.private_files.enforce_before_dispatch')) {
+                $this->fileAccess->prepareBatch($batchId);
+            }
             $pendingDispatch = dispatch($job);
             unset($pendingDispatch);
         } catch (Throwable $exception) {

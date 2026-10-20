@@ -1,4 +1,7 @@
 from datetime import datetime
+
+import pytest
+
 from src.loaders.search_loader import SearchLoader
 
 from .conftest import FakeSearchDatabase, make_batch, stage_file
@@ -12,13 +15,13 @@ PHONE_MAPPING = [
 ]
 
 
-def run_phone_csv(settings, tmp_path, rows):
+def run_phone_csv(settings, tmp_path, rows, refresh_mode="FULL_REPLACE"):
     source = tmp_path / "telefonos-source.csv"
     source.write_text("DOCUMENTO,TELEFONO,OPERADOR,FECHA DATA\n" + "\n".join(rows) + "\n", encoding="utf-8")
     _, fingerprint = stage_file(settings, source, "telefonos.csv")
     batch = make_batch(
         tipo="SEARCH", dataset_code="TELEFONOS", source_code="BASE_TELEFONOS",
-        perfil_version="1", refresh_mode="FULL_REPLACE", mapping_version=1,
+        perfil_version="1", refresh_mode=refresh_mode, mapping_version=1,
         original_name="telefonos.csv", relative_path="telefonos.csv", extension="csv",
         sha256=fingerprint,
     )
@@ -41,11 +44,29 @@ def test_many_phones_for_one_document_and_same_phone_for_distinct_documents_are_
     assert database.published is True
 
 
-def test_duplicate_document_phone_is_an_error_and_blocks_publication(settings, tmp_path):
+def test_upsert_mode_is_accepted_only_for_base_telefonos(settings, tmp_path):
+    database, result = run_phone_csv(
+        settings,
+        tmp_path,
+        ["00003862,934043966,CLARO,2026-10-20"],
+        refresh_mode="UPSERT",
+    )
+
+    assert result.status == "COMPLETADO"
+    assert len(database.phones) == 1
+    assert database.published is True
+
+
+@pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "UPSERT"])
+def test_duplicate_document_phone_is_an_error_and_blocks_publication(
+    settings,
+    tmp_path,
+    refresh_mode,
+):
     database, result = run_phone_csv(settings, tmp_path, [
         "00003862,934043966,CLARO,2026-01-01",
         "00003862,934043966,CLARO,2026-01-02",
-    ])
+    ], refresh_mode=refresh_mode)
     assert result.status == "COMPLETADO_CON_ERRORES"
     assert len(database.raw_records) == 2
     assert len(database.phones) == 1

@@ -7,6 +7,7 @@ use App\Jobs\ProcessImportBatch;
 use App\Models\User;
 use App\UserRole;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 class ImportProcessControllerTest extends ImportFeatureTestCase
@@ -83,6 +84,78 @@ class ImportProcessControllerTest extends ImportFeatureTestCase
         $this->actingAs($user)->post(route('imports.process', $batchId))->assertRedirect();
 
         Queue::assertPushed(ProcessImportBatch::class, 1);
+    }
+
+    public function test_inaccessible_private_file_prevents_dispatch(): void
+    {
+        Queue::fake([ProcessImportBatch::class]);
+        Storage::fake('imports');
+        config(['imports.private_files.enforce_before_dispatch' => true]);
+        $batchId = $this->createBatch(['archivo_ruta' => '2026/10/missing.csv']);
+        $user = User::factory()->operator()->create();
+
+        $this->actingAs($user)
+            ->post(route('imports.process', $batchId))
+            ->assertRedirectToRoute('imports.show', $batchId)
+            ->assertSessionHas('warning', 'No fue posible enviar la carga a procesamiento.');
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_readable_private_file_can_be_dispatched_when_access_check_is_enabled(): void
+    {
+        Queue::fake([ProcessImportBatch::class]);
+        Storage::fake('imports');
+        config(['imports.private_files.enforce_before_dispatch' => true]);
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $user = posix_getpwuid(posix_geteuid());
+            $group = posix_getgrgid(posix_getegid());
+            $this->assertIsArray($user);
+            $this->assertIsArray($group);
+            config([
+                'imports.private_files.etl_user' => $user['name'],
+                'imports.private_files.shared_group' => $group['name'],
+            ]);
+        }
+        $path = '2026/10/readable.csv';
+        Storage::disk('imports')->put($path, "DOCUMENTO,TELEFONO\n00003862,934043966\n");
+        $batchId = $this->createBatch(['archivo_ruta' => $path]);
+        $user = User::factory()->operator()->create();
+
+        $this->actingAs($user)
+            ->post(route('imports.process', $batchId))
+            ->assertRedirectToRoute('imports.show', $batchId)
+            ->assertSessionHas('status', 'El procesamiento fue enviado a la cola.');
+
+        Queue::assertPushed(
+            ProcessImportBatch::class,
+            fn (ProcessImportBatch $job): bool => $job->batchId === $batchId,
+        );
+    }
+
+    public function test_posix_access_enforcement_rejects_missing_shared_group_configuration(): void
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('La validación de grupos POSIX solo aplica en Linux/Unix.');
+        }
+
+        Queue::fake([ProcessImportBatch::class]);
+        Storage::fake('imports');
+        config([
+            'imports.private_files.enforce_before_dispatch' => true,
+            'imports.private_files.shared_group' => null,
+        ]);
+        $path = '2026/10/readable.csv';
+        Storage::disk('imports')->put($path, "DOCUMENTO,TELEFONO\n00003862,934043966\n");
+        $batchId = $this->createBatch(['archivo_ruta' => $path]);
+        $user = User::factory()->operator()->create();
+
+        $this->actingAs($user)
+            ->post(route('imports.process', $batchId))
+            ->assertRedirectToRoute('imports.show', $batchId)
+            ->assertSessionHas('warning', 'No fue posible enviar la carga a procesamiento.');
+
+        Queue::assertNothingPushed();
     }
 
     public function test_read_only_user_can_view_status_without_process_button(): void

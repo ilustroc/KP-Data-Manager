@@ -24,7 +24,7 @@ final class TelefonosImportDefinition implements SearchImportDefinition
 
     public function refreshModes(): array
     {
-        return [RefreshMode::FullReplace, RefreshMode::ScopeReplace];
+        return [RefreshMode::FullReplace, RefreshMode::ScopeReplace, RefreshMode::Upsert];
     }
 
     /** @return array<string, string> */
