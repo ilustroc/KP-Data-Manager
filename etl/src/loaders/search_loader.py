@@ -423,7 +423,7 @@ class SearchLoader:
             or batch.source_code is None
             or batch.mapping_version is None
             or batch.perfil_version != "1"
-            or batch.refresh_mode not in {"FULL_REPLACE", "SCOPE_REPLACE"}
+            or not SearchLoader._supports_refresh_mode(batch)
         ):
             raise StructuralFileError("El batch no corresponde a un perfil SEARCH v1 publicable.")
 
@@ -440,9 +440,20 @@ class SearchLoader:
                 "PROPIEDADES", "SBS_RESUMEN", "SBS_DETALLE", "LABORAL_ESSALUD",
             }
             or batch.source_code is None
-            or batch.refresh_mode not in {"FULL_REPLACE", "SCOPE_REPLACE"}
+            or not SearchLoader._supports_refresh_mode(batch)
         ):
             raise StructuralFileError("El batch no corresponde a una recuperación SEARCH publicable.")
+
+    @staticmethod
+    def _supports_refresh_mode(batch: BatchRecord) -> bool:
+        if batch.refresh_mode in {"FULL_REPLACE", "SCOPE_REPLACE"}:
+            return True
+
+        return (
+            batch.refresh_mode == "UPSERT"
+            and batch.dataset_code == "TELEFONOS"
+            and batch.source_code == "BASE_TELEFONOS"
+        )
 
     @staticmethod
     def _safe_error_code(exception: Exception) -> int | None:
@@ -484,6 +495,8 @@ class SearchLoader:
         source_path = Path(os.path.abspath(storage_root / Path(batch.archivo_ruta)))
         if not source_path.is_relative_to(storage_root) or not source_path.is_file():
             raise FileSecurityError("El archivo privado SEARCH no existe o está fuera del storage.")
+        if not os.access(source_path, os.R_OK):
+            raise FileSecurityError("El archivo privado SEARCH no es legible por el usuario ETL.")
         return source_path
 
     @staticmethod

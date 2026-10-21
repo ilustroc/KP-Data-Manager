@@ -11,12 +11,14 @@ use Illuminate\Support\Facades\DB;
 
 final class SearchSourceCatalogService
 {
+    private const UPSERT_SOURCE_CODE = 'BASE_TELEFONOS';
+
     /**
      * @return Collection<int, object>
      */
     public function activeForDataset(DatasetCode $dataset): Collection
     {
-        return $this->connection()
+        $sources = $this->connection()
             ->table($this->datasetSourceTable().' as dataset_source')
             ->join(
                 $this->sourceTable().' as source',
@@ -40,6 +42,14 @@ final class SearchSourceCatalogService
             ->orderBy('source.label')
             ->orderBy('source.source_code')
             ->get();
+
+        foreach ($sources as $source) {
+            if ($dataset !== DatasetCode::Telefonos || $source->source_code !== self::UPSERT_SOURCE_CODE) {
+                $source->allows_upsert = 0;
+            }
+        }
+
+        return $sources;
     }
 
     public function requireAllowed(
@@ -47,6 +57,13 @@ final class SearchSourceCatalogService
         SearchSourceCode $source,
         RefreshMode $refreshMode,
     ): object {
+        if ($refreshMode === RefreshMode::Upsert
+            && ($dataset !== DatasetCode::Telefonos || $source->value !== self::UPSERT_SOURCE_CODE)) {
+            throw new SearchImportConfigurationException(
+                'UPSERT está autorizado únicamente para TELEFONOS / BASE_TELEFONOS.',
+            );
+        }
+
         $definition = $this->connection()
             ->table($this->datasetSourceTable().' as dataset_source')
             ->join(

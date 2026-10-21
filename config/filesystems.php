@@ -43,6 +43,17 @@ return [
             'root' => storage_path('app/private/imports'),
             'serve' => false,
             'visibility' => 'private',
+            'directory_visibility' => 'private',
+            'permissions' => [
+                'file' => [
+                    'public' => 0640,
+                    'private' => 0640,
+                ],
+                'dir' => [
+                    'public' => 0750,
+                    'private' => 0750,
+                ],
+            ],
             'throw' => true,
             'report' => true,
         ],

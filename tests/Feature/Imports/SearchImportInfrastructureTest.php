@@ -57,6 +57,31 @@ class SearchImportInfrastructureTest extends ImportFeatureTestCase
         $service->requireAllowed(DatasetCode::Telefonos, $source, RefreshMode::Upsert);
     }
 
+    public function test_source_catalog_rejects_upsert_outside_base_telefonos_even_when_flag_is_enabled(): void
+    {
+        $this->insertDataset(DatasetCode::Personas, 'Personas', 10);
+        $this->insertSource('BASE_PERSONAS', 'Base Personas');
+        $this->insertDatasetSource(
+            DatasetCode::Personas,
+            'BASE_PERSONAS',
+            allowsUpsert: true,
+        );
+
+        $visibleSource = app(SearchSourceCatalogService::class)
+            ->activeForDataset(DatasetCode::Personas)
+            ->first();
+
+        $this->assertSame(0, $visibleSource->allows_upsert);
+
+        $this->expectException(SearchImportConfigurationException::class);
+
+        app(SearchSourceCatalogService::class)->requireAllowed(
+            DatasetCode::Personas,
+            SearchSourceCode::from('BASE_PERSONAS'),
+            RefreshMode::Upsert,
+        );
+    }
+
     public function test_current_mapping_is_resolved_in_source_position_order(): void
     {
         $this->insertDataset(DatasetCode::Personas, 'Personas', 10);

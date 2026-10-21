@@ -17,9 +17,12 @@ final class SearchImportRegistrationService
 {
     public function __construct(
         private readonly ImportFileService $files,
+        private readonly ImportFileAccessService $fileAccess,
         private readonly ImportColumnMappingService $mappings,
         private readonly SearchImportIdempotencyKey $idempotency,
         private readonly SearchImportDefinitionRegistry $definitions,
+        private readonly SearchDatasetCatalogService $datasets,
+        private readonly SearchSourceCatalogService $sources,
     ) {}
 
     /** @param array<string, string> $mapping */
@@ -29,6 +32,12 @@ final class SearchImportRegistrationService
         $source = SearchSourceCode::from($preview->sourceCode);
         $refreshMode = RefreshMode::from($preview->refreshMode);
         $definition = $this->definitions->resolve($dataset);
+        if (! in_array($refreshMode, $definition->refreshModes(), true)) {
+            throw new SearchImportConfigurationException('El modo de actualización no está habilitado para este dataset.');
+        }
+        $this->datasets->requireActive($dataset);
+        $this->sources->requireAllowed($dataset, $source, $refreshMode);
+
         $mappingVersion = $this->mappings->createOrReuse(
             $dataset,
             $source,
@@ -93,6 +102,7 @@ final class SearchImportRegistrationService
             ], 'batch_id');
             $destination = $this->files->pathForBatch($batchId, $internalName, $registeredAt);
             $this->files->move($preview->storedPath, $destination);
+            $this->fileAccess->prepare($destination);
             $updated = $connection->table(config('imports.table'))
                 ->where('batch_id', $batchId)
                 ->where('estado', ImportStatus::Received->value)

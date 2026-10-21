@@ -126,10 +126,22 @@ ETL_PYTHON_BINARY=C:\ruta\al\proyecto\etl\.venv\Scripts\python.exe
 ETL_WORKDIR=C:\ruta\al\proyecto\etl
 ETL_PROCESS_TIMEOUT_SECONDS=3600
 ETL_QUEUE=etl
-DB_QUEUE_RETRY_AFTER=3660
+DB_QUEUE_RETRY_AFTER=3720
+IMPORT_ENFORCE_ETL_FILE_ACCESS=true
+IMPORT_ETL_USER=kpdeploy
+IMPORT_SHARED_GROUP=kpdm-imports
+IMPORT_FILE_MODE=0640
+IMPORT_DIRECTORY_MODE=2750
 ```
 
-En Linux futuro, `ETL_PYTHON_BINARY` podrá apuntar al Python aislado, por ejemplo `/opt/kp-data-etl/.venv/bin/python`. Fase 6 no instala ni configura ese runtime en el VPS.
+En Linux, `kpdmweb` y `kpdeploy` deben pertenecer a un grupo compartido dedicado
+(`kpdm-imports`). El directorio `storage/app/private/imports` debe pertenecer a ese
+grupo, conservar el bit setgid y tener ACL por defecto para lectura/traversal del
+grupo. El servicio aplica y verifica grupo y modos antes de dejar un batch listo y
+vuelve a comprobar el acceso antes de encolarlo. Los archivos permanecen privados:
+`0640` para archivos y `2750` para directorios; nunca se requiere `0777`.
+
+En Linux, `ETL_PYTHON_BINARY` puede apuntar al Python aislado, por ejemplo `/opt/kp-data-etl/.venv/bin/python`.
 
 Iniciar el worker local desde la raíz Laravel:
 
@@ -206,6 +218,13 @@ TELEFONOS reutiliza el mismo parser, Bronze genérico, loader, scope y publicado
 El `row_hash` mantiene el algoritmo canónico común sobre las cuatro celdas fuente previas a Silver. El `record_hash` usa, en orden, `documento`, `telefono`, `operador_raw`, `operador` y `fecha_data`, con tipo explícito y fecha ISO. Dos filas con el mismo par documento/teléfono dentro del batch producen `DUPLICATE_DOCUMENT_PHONE` y bloquean la publicación; un documento puede tener varios teléfonos y el mismo teléfono puede pertenecer a documentos distintos.
 
 `SCOPE_REPLACE` elimina en Gold exclusivamente los teléfonos de los documentos del scope oficial y luego inserta el conjunto Silver completo de esos documentos. `FULL_REPLACE` hace upsert set-based del batch y elimina las filas de batches anteriores. Ambas variantes se ejecutan en una sola transacción InnoDB multi-schema; Bronze y Silver nunca se eliminan. DM-F3 permite una sola fuente activa TELEFONOS hasta definir una política formal de fusión.
+
+`UPSERT` está restringido en código y catálogo a `TELEFONOS / BASE_TELEFONOS`. Hace
+un único `INSERT ... SELECT ... ON DUPLICATE KEY UPDATE` sobre la clave primaria
+`(documento, telefono)`: inserta pares nuevos y actualiza operador, fecha y metadatos
+del par existente. No ejecuta ningún `DELETE`, por lo que conserva teléfonos ausentes
+del archivo y documentos ajenos al lote. La habilitación de `allows_upsert` es un
+paso SQL manual posterior a las pruebas; no se activa automáticamente al desplegar.
 
 Una caída no borra chunks ya confirmados. Las filas quedan trazables por `batch_id`; una futura operación controlada de rollback podría localizarlas con `WHERE batch_id = X`, pero esta fase no implementa borrados ni reprocesamiento.
 

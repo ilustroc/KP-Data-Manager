@@ -636,7 +636,7 @@ class MySqlDatabase:
             cursor.execute(
                 f"""
                     SELECT dataset_source.source_code, dataset_source.allows_full_replace,
-                           dataset_source.allows_scope_replace
+                           dataset_source.allows_scope_replace, dataset_source.allows_upsert
                     FROM `{self.settings.control_database}`.`import_dataset_source` AS dataset_source
                     INNER JOIN `{self.settings.control_database}`.`import_source` AS source
                         ON source.source_code = dataset_source.source_code
@@ -661,11 +661,7 @@ class MySqlDatabase:
             raise RuntimeError("El scope no coincide con el batch SEARCH.")
         if source is None:
             raise RuntimeError("La fuente SEARCH no está activa ni autorizada.")
-        permission_column = (
-            "allows_full_replace"
-            if batch.refresh_mode == "FULL_REPLACE"
-            else "allows_scope_replace"
-        )
+        permission_column = self._search_permission_column(batch)
         if int(source[permission_column]) != 1:
             raise RuntimeError("El modo de actualización SEARCH no está autorizado.")
 
@@ -699,6 +695,7 @@ class MySqlDatabase:
     ) -> None:
         if batch.source_code is None:
             raise RuntimeError("El publicador SEARCH recibió un batch incompatible.")
+        self._search_permission_column(batch)
         tables = {
             "PERSONAS": ("search_personas", "person_id", "search_person_index"),
             "TELEFONOS": ("search_telefonos", "phone_id", "search_telefonos"),
@@ -797,6 +794,19 @@ class MySqlDatabase:
                             )
                             if measurement is not None:
                                 measurement.rows_processed = max(0, cursor.rowcount)
+                    elif batch.refresh_mode == "UPSERT":
+                        with self._measure(
+                            metrics,
+                            "gold_insert",
+                            rows_processed=stats.inserted_rows,
+                            logical_statement_count=1,
+                        ):
+                            self._insert_gold_search(
+                                cursor,
+                                batch,
+                                published_at,
+                                upsert=True,
+                            )
                     else:
                         raise RuntimeError("Modo de publicación SEARCH no soportado.")
 
@@ -988,7 +998,8 @@ class MySqlDatabase:
             f"""
                 SELECT dataset_source.source_code,
                        dataset_source.allows_full_replace,
-                       dataset_source.allows_scope_replace
+                       dataset_source.allows_scope_replace,
+                       dataset_source.allows_upsert
                 FROM `{self.settings.control_database}`.`import_dataset_source`
                     AS dataset_source
                 INNER JOIN `{self.settings.control_database}`.`import_source` AS source
@@ -1003,11 +1014,29 @@ class MySqlDatabase:
         if len(active_sources) != 1 or str(active_sources[0]["source_code"]) != batch.source_code:
             raise RuntimeError("SEARCH Gold exige exactamente una fuente activa y autorizada.")
 
-        permission_column = (
-            "allows_full_replace" if batch.refresh_mode == "FULL_REPLACE" else "allows_scope_replace"
-        )
+        permission_column = self._search_permission_column(batch)
         if int(active_sources[0][permission_column]) != 1:
             raise RuntimeError("El modo del batch SEARCH dejó de estar autorizado para la fuente.")
+
+    @staticmethod
+    def _search_permission_column(batch: BatchRecord) -> str:
+        permission_columns = {
+            "FULL_REPLACE": "allows_full_replace",
+            "SCOPE_REPLACE": "allows_scope_replace",
+            "UPSERT": "allows_upsert",
+        }
+        permission_column = permission_columns.get(batch.refresh_mode)
+        if permission_column is None:
+            raise RuntimeError("Modo de publicación SEARCH no soportado.")
+        if batch.refresh_mode == "UPSERT" and (
+            batch.dataset_code != "TELEFONOS"
+            or batch.source_code != "BASE_TELEFONOS"
+        ):
+            raise RuntimeError(
+                "UPSERT está autorizado únicamente para TELEFONOS / BASE_TELEFONOS."
+            )
+
+        return permission_column
 
     def _ensure_gold_source_is_compatible(
         self,

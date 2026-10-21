@@ -16,7 +16,10 @@ use Throwable;
 
 class ImportUploadService
 {
-    public function __construct(private readonly ImportFileService $files) {}
+    public function __construct(
+        private readonly ImportFileService $files,
+        private readonly ImportFileAccessService $fileAccess,
+    ) {}
 
     public function registerWeb(
         UploadedFile $file,
@@ -156,6 +159,7 @@ class ImportUploadService
 
             $this->files->storeFromPath($sourcePath, $temporaryPath);
             $this->files->move($temporaryPath, $finalPath);
+            $this->fileAccess->prepare($finalPath);
 
             $updated = $this->transitionBatch(
                 connection: $connection,

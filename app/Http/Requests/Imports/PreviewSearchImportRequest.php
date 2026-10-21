@@ -30,7 +30,7 @@ class PreviewSearchImportRequest extends FormRequest
         return [
             'dataset_code' => ['required', Rule::in(config('imports.search.available_datasets', []))],
             'source_code' => ['required', 'string', 'max:64', 'regex:/\A[A-Z0-9][A-Z0-9_-]{0,63}\z/D'],
-            'refresh_mode' => ['required', Rule::in([RefreshMode::FullReplace->value, RefreshMode::ScopeReplace->value])],
+            'refresh_mode' => ['required', Rule::enum(RefreshMode::class)],
             'archivo' => ['required', 'file', "extensions:{$extensions}", "max:{$maximumKilobytes}"],
         ];
     }

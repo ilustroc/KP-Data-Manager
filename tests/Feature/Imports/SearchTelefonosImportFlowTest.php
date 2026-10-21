@@ -32,7 +32,7 @@ class SearchTelefonosImportFlowTest extends ImportFeatureTestCase
         DB::connection('sqlite')->table('import_dataset_source')->insert([
             'dataset_code' => 'TELEFONOS', 'source_code' => 'BASE_TELEFONOS',
             'default_refresh_mode' => 'FULL_REPLACE', 'allows_full_replace' => 1,
-            'allows_scope_replace' => 1, 'allows_upsert' => 0,
+            'allows_scope_replace' => 1, 'allows_upsert' => 1,
             'current_mapping_version' => null, 'is_active' => 1,
             'created_at' => $now, 'updated_at' => $now,
         ]);
@@ -91,6 +91,115 @@ class SearchTelefonosImportFlowTest extends ImportFeatureTestCase
         $this->actingAs($user)->get(route('imports.show', $batch->batch_id))
             ->assertOk()
             ->assertDontSee('Histórico');
+    }
+
+    public function test_upsert_preview_mapping_confirmation_registration_and_dispatch_complete_the_authorized_flow(): void
+    {
+        Storage::fake('imports');
+        Queue::fake([ProcessImportBatch::class]);
+        $user = User::factory()->operator()->create();
+
+        $response = $this->actingAs($user)->post(route('imports.search.preview'), $this->payload(
+            "DOCUMENTO,TELEFONO,OPERADOR,FECHA DATA\n".
+            "00003862,934043966,ENTEL,2026-10-20\n",
+            'UPSERT',
+        ));
+        $token = basename((string) $response->headers->get('Location'));
+
+        $response->assertRedirectToRoute('imports.search.preview.show', $token);
+        $this->actingAs($user)->get(route('imports.search.preview.show', $token))
+            ->assertSee('Preview TELEFONOS')
+            ->assertSee('Archivo listo para procesar');
+        $this->actingAs($user)->post(route('imports.search.confirm'), [
+            'token' => $token,
+            'mapping' => $this->mapping(),
+            'confirmacion' => '1',
+        ])->assertRedirect();
+
+        $batch = DB::connection('sqlite')->table('import_batch')->firstOrFail();
+        $this->assertSame('UPSERT', $batch->refresh_mode);
+        $this->assertSame('PENDIENTE', $batch->estado);
+        $this->assertSame(4, DB::connection('sqlite')->table('import_column_mapping')->count());
+        Storage::disk('imports')->assertExists($batch->archivo_ruta);
+        Queue::assertPushed(
+            ProcessImportBatch::class,
+            fn (ProcessImportBatch $job): bool => $job->batchId === (int) $batch->batch_id,
+        );
+    }
+
+    public function test_upsert_permission_is_revalidated_during_confirmation(): void
+    {
+        Storage::fake('imports');
+        Queue::fake([ProcessImportBatch::class]);
+        $user = User::factory()->operator()->create();
+        $response = $this->actingAs($user)->post(route('imports.search.preview'), $this->payload(
+            "DOCUMENTO,TELEFONO,OPERADOR,FECHA DATA\n00003862,934043966,CLARO,2026-10-20\n",
+            'UPSERT',
+        ));
+        $token = basename((string) $response->headers->get('Location'));
+        DB::connection('sqlite')->table('import_dataset_source')
+            ->where('dataset_code', 'TELEFONOS')
+            ->where('source_code', 'BASE_TELEFONOS')
+            ->update(['allows_upsert' => 0]);
+
+        $this->actingAs($user)
+            ->from(route('imports.search.preview.show', $token))
+            ->post(route('imports.search.confirm'), [
+                'token' => $token,
+                'mapping' => $this->mapping(),
+                'confirmacion' => '1',
+            ])
+            ->assertRedirect(route('imports.search.preview.show', $token))
+            ->assertSessionHasErrors('mapping');
+
+        $this->assertDatabaseCount('import_batch', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_repeated_upsert_file_is_idempotent_and_reuses_the_original_batch(): void
+    {
+        Storage::fake('imports');
+        Queue::fake([ProcessImportBatch::class]);
+        $user = User::factory()->operator()->create();
+        $csv = "DOCUMENTO,TELEFONO,OPERADOR,FECHA DATA\n00003862,934043966,CLARO,2026-10-20\n";
+
+        $firstPreview = $this->actingAs($user)->post(
+            route('imports.search.preview'),
+            $this->payload($csv, 'UPSERT'),
+        );
+        $firstToken = basename((string) $firstPreview->headers->get('Location'));
+        $this->actingAs($user)->post(route('imports.search.confirm'), [
+            'token' => $firstToken,
+            'mapping' => $this->mapping(),
+            'confirmacion' => '1',
+        ])->assertRedirect();
+        $batchId = (int) DB::connection('sqlite')->table('import_batch')->value('batch_id');
+
+        $secondPreview = $this->actingAs($user)->post(
+            route('imports.search.preview'),
+            $this->payload($csv, 'UPSERT'),
+        );
+        $secondToken = basename((string) $secondPreview->headers->get('Location'));
+        $this->actingAs($user)->post(route('imports.search.confirm'), [
+            'token' => $secondToken,
+            'mapping' => $this->mapping(),
+            'confirmacion' => '1',
+        ])
+            ->assertRedirectToRoute('imports.show', $batchId)
+            ->assertSessionHas('warning');
+
+        $this->assertDatabaseCount('import_batch', 1);
+        Queue::assertPushed(ProcessImportBatch::class, 1);
+    }
+
+    public function test_create_form_exposes_upsert_capability_from_the_source_catalog(): void
+    {
+        $user = User::factory()->operator()->create();
+
+        $this->actingAs($user)->get(route('imports.create'))
+            ->assertSee('Actualización incremental (UPSERT)')
+            ->assertSee('data-upsert="1"', false)
+            ->assertSee('data-permission="upsert"', false);
     }
 
     public function test_invalid_preview_blocks_confirmation_and_does_not_write_persistent_search_data(): void
@@ -277,11 +386,11 @@ class SearchTelefonosImportFlowTest extends ImportFeatureTestCase
     }
 
     /** @return array<string, mixed> */
-    private function payload(string $csv): array
+    private function payload(string $csv, string $refreshMode = 'FULL_REPLACE'): array
     {
         return [
             'dataset_code' => 'TELEFONOS', 'source_code' => 'BASE_TELEFONOS',
-            'refresh_mode' => 'FULL_REPLACE',
+            'refresh_mode' => $refreshMode,
             'archivo' => UploadedFile::fake()->createWithContent('telefonos.csv', $csv),
         ];
     }
