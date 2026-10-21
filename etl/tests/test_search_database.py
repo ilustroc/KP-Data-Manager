@@ -950,3 +950,55 @@ def test_connection_is_closed_when_session_setup_raises_interface_error(settings
 
     assert connection.recovery_cursor.closed is True
     assert connection.closed is True
+
+
+@pytest.mark.parametrize(
+    "mode,recovery",
+    [
+        ("FULL_REPLACE", False),
+        ("SCOPE_REPLACE", False),
+        ("FULL_REPLACE", True),
+    ],
+)
+def test_sbs_detalle_integrity_optimized(settings, mode, recovery):
+    """Comprueba las comparaciones indexables para SBS."""
+    connection = PublicationConnection(
+        active_source="BASE_SBS_DETALLE",
+        batch_status="ERROR" if recovery else "PROCESANDO",
+    )
+    database = database_with_connection(settings, connection)
+
+    sbs = make_batch(
+        tipo="SEARCH",
+        perfil_version="1",
+        dataset_code="SBS_DETALLE",
+        source_code="BASE_SBS_DETALLE",
+        refresh_mode=mode,
+        mapping_version=1,
+    )
+
+    database.publish_search(
+        sbs,
+        datetime(2026, 10, 21, 12, 0),
+        ProcessingStats(
+            file_rows=1,
+            inserted_rows=1,
+            scope_count=1,
+        ),
+        recovery=recovery,
+    )
+
+    queries = "\n".join(connection.publication_cursor.executed)
+
+    assert (
+        "scope.documento = (CONVERT(silver.documento USING "
+        "utf8mb4) COLLATE utf8mb4_unicode_ci)"
+    ) in queries
+
+    assert (
+        "silver.documento = (CONVERT(scope.documento USING "
+        "ascii) COLLATE ascii_bin)"
+    ) in queries
+
+    assert connection.committed
+    assert not connection.rolled_back
