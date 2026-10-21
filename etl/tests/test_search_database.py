@@ -283,6 +283,17 @@ def family_batch(refresh_mode: str):
     )
 
 
+def essalud_batch(refresh_mode: str):
+    return make_batch(
+        tipo="SEARCH",
+        perfil_version="1",
+        dataset_code="LABORAL_ESSALUD",
+        source_code="BASE_ESSALUD",
+        refresh_mode=refresh_mode,
+        mapping_version=1,
+    )
+
+
 def test_scope_replace_uses_official_scope_and_single_transaction(settings):
     connection = PublicationConnection()
     database = database_with_connection(settings, connection)
@@ -719,6 +730,69 @@ def test_phone_upsert_failure_rolls_back_without_partial_publication(settings):
 
     assert connection.committed is False
     assert connection.rolled_back is True
+
+
+@pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "SCOPE_REPLACE"])
+def test_essalud_integrity_validation_converts_only_the_non_indexed_document_side(
+    settings,
+    refresh_mode,
+):
+    connection = PublicationConnection(active_source="BASE_ESSALUD")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        essalud_batch(refresh_mode),
+        datetime(2026, 10, 21, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    integrity_queries = [
+        statement
+        for statement in connection.publication_cursor.executed
+        if "scope.id IS NULL" in statement or "silver.employment_id IS NULL" in statement
+    ]
+    sql = "\n".join(integrity_queries)
+
+    assert "scope.documento = (CONVERT(silver.documento USING utf8mb4) COLLATE utf8mb4_unicode_ci)" in sql
+    assert "silver.documento = (CONVERT(scope.documento USING ascii) COLLATE ascii_bin)" in sql
+    assert len(integrity_queries) == 2
+    assert connection.committed and not connection.rolled_back
+
+
+def test_non_essalud_integrity_validation_keeps_the_existing_document_comparisons(settings):
+    connection = PublicationConnection(active_source="BASE_TELEFONOS")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        phone_batch("FULL_REPLACE"),
+        datetime(2026, 10, 21, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+
+    assert "scope.documento = silver.documento" in sql
+    assert "silver.documento = scope.documento" in sql
+    assert "CONVERT(scope.documento USING ascii)" not in sql
+    assert "CONVERT(silver.documento USING utf8mb4)" not in sql
+
+
+def test_essalud_publish_only_recovery_uses_the_optimized_integrity_validation(settings):
+    connection = PublicationConnection(active_source="BASE_ESSALUD", batch_status="ERROR")
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        essalud_batch("FULL_REPLACE"),
+        datetime(2026, 10, 21, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+        recovery=True,
+    )
+
+    sql = "\n".join(connection.publication_cursor.executed)
+
+    assert "estado IN ('PROCESANDO', 'ERROR')" in sql
+    assert "silver.documento = (CONVERT(scope.documento USING ascii) COLLATE ascii_bin)" in sql
+    assert connection.committed and not connection.rolled_back
 
 
 @pytest.mark.parametrize("refresh_mode", ["FULL_REPLACE", "SCOPE_REPLACE"])

@@ -711,6 +711,10 @@ class MySqlDatabase:
         if batch.dataset_code not in tables:
             raise RuntimeError("El publicador SEARCH recibió un dataset no soportado.")
         silver_table, silver_id, gold_table = tables[batch.dataset_code]
+        (
+            silver_to_scope_document_match,
+            scope_to_silver_document_match,
+        ) = self._search_scope_integrity_predicates(batch.dataset_code)
         publication_lock_name = self._search_publication_lock_name(batch)
         publication_lock_acquired = False
         try:
@@ -847,7 +851,7 @@ class MySqlDatabase:
                                 FROM `{self.settings.silver_database}`.`{silver_table}` AS silver
                                 LEFT JOIN `{self.settings.control_database}`.`import_scope_document` AS scope
                                   ON scope.batch_id = silver.batch_id
-                                 AND scope.documento = silver.documento
+                                 AND {silver_to_scope_document_match}
                                 WHERE silver.batch_id = %s AND scope.id IS NULL
                                 LIMIT 1
                             """,
@@ -860,7 +864,7 @@ class MySqlDatabase:
                                 FROM `{self.settings.control_database}`.`import_scope_document` AS scope
                                 LEFT JOIN `{self.settings.silver_database}`.`{silver_table}` AS silver
                                   ON silver.batch_id = scope.batch_id
-                                 AND silver.documento = scope.documento
+                                 AND {scope_to_silver_document_match}
                                 WHERE scope.batch_id = %s AND silver.{silver_id} IS NULL
                                 LIMIT 1
                             """,
@@ -1074,6 +1078,21 @@ class MySqlDatabase:
     @staticmethod
     def _release_search_publication_lock(cursor: DictCursor, lock_name: str) -> None:
         cursor.execute("SELECT RELEASE_LOCK(%s) AS lock_released", (lock_name,))
+
+    @staticmethod
+    def _search_scope_integrity_predicates(dataset_code: str) -> tuple[str, str]:
+        if dataset_code == "LABORAL_ESSALUD":
+            return (
+                "scope.documento = (CONVERT(silver.documento USING utf8mb4) "
+                "COLLATE utf8mb4_unicode_ci)",
+                "silver.documento = (CONVERT(scope.documento USING ascii) "
+                "COLLATE ascii_bin)",
+            )
+
+        return (
+            "scope.documento = silver.documento",
+            "silver.documento = scope.documento",
+        )
 
     def _insert_gold_search(
         self,
