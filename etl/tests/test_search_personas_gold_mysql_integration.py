@@ -338,6 +338,22 @@ def test_contract_sql_parser_supports_delimiter_wrapped_procedures() -> None:
     )
 
 
+def test_information_schema_values_accept_mysql_column_key_capitalization() -> None:
+    row = {
+        "PARENT_COLUMN_NAME": "padre",
+        "PARENT_COLUMN_TYPE": "varchar(500)",
+        "PARENT_IS_NULLABLE": "YES",
+        "PARENT_CHARACTER_SET_NAME": "utf8mb4",
+        "PARENT_COLLATION_NAME": None,
+    }
+
+    assert _information_schema_value(row, "parent_column_name") == "padre"
+    assert _information_schema_value(row, "parent_column_type") == "varchar(500)"
+    assert _information_schema_value(row, "parent_is_nullable") == "YES"
+    assert _nullable_information_schema_value(row, "parent_character_set_name") == "utf8mb4"
+    assert _nullable_information_schema_value(row, "parent_collation_name") is None
+
+
 def _create_supporting_schema(database: MySqlDatabase) -> None:
     control = database.settings.control_database
     bronze = database.settings.bronze_database
@@ -570,7 +586,7 @@ def _gold_parent_columns(database: MySqlDatabase) -> tuple[str, ...]:
     gold = database.settings.gold_database
     with database.connection.cursor() as cursor:
         cursor.execute(
-            """SELECT column_name
+            """SELECT column_name AS parent_column_name
                 FROM information_schema.columns
                 WHERE table_schema = %s
                   AND table_name = 'search_person_index'
@@ -578,7 +594,10 @@ def _gold_parent_columns(database: MySqlDatabase) -> tuple[str, ...]:
                 ORDER BY ordinal_position""",
             (gold,),
         )
-        return tuple(str(row["column_name"]) for row in cursor.fetchall())
+        return tuple(
+            str(_information_schema_value(row, "parent_column_name"))
+            for row in cursor.fetchall()
+        )
 
 
 def _gold_parent_column_definitions(
@@ -587,7 +606,12 @@ def _gold_parent_column_definitions(
     gold = database.settings.gold_database
     with database.connection.cursor() as cursor:
         cursor.execute(
-            """SELECT column_name, column_type, is_nullable, character_set_name, collation_name
+            """SELECT
+                    column_name AS parent_column_name,
+                    column_type AS parent_column_type,
+                    is_nullable AS parent_is_nullable,
+                    character_set_name AS parent_character_set_name,
+                    collation_name AS parent_collation_name
                 FROM information_schema.columns
                 WHERE table_schema = %s
                   AND table_name = 'search_person_index'
@@ -598,14 +622,28 @@ def _gold_parent_column_definitions(
         rows = cursor.fetchall()
 
     return {
-        str(row["column_name"]): (
-            str(row["column_type"]),
-            str(row["is_nullable"]),
-            None if row["character_set_name"] is None else str(row["character_set_name"]),
-            None if row["collation_name"] is None else str(row["collation_name"]),
+        str(_information_schema_value(row, "parent_column_name")): (
+            str(_information_schema_value(row, "parent_column_type")),
+            str(_information_schema_value(row, "parent_is_nullable")),
+            _nullable_information_schema_value(row, "parent_character_set_name"),
+            _nullable_information_schema_value(row, "parent_collation_name"),
         )
         for row in rows
     }
+
+
+def _information_schema_value(row: dict[str, object], key: str) -> object:
+    for actual_key, value in row.items():
+        if actual_key.casefold() == key.casefold():
+            return value
+
+    raise KeyError(key)
+
+
+def _nullable_information_schema_value(row: dict[str, object], key: str) -> str | None:
+    value = _information_schema_value(row, key)
+
+    return None if value is None else str(value)
 
 
 def _is_personas_publication_lock_free(database: MySqlDatabase) -> bool:
