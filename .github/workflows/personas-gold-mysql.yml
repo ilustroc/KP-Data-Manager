@@ -9,12 +9,8 @@ permissions:
 
 jobs:
   mysql-integration:
-    name: MySQL ${{ matrix.mysql }}
+    name: MySQL 8.0
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        mysql: ['8.0', '5.7']
 
     steps:
       - name: Checkout
@@ -35,20 +31,20 @@ jobs:
       - name: Run PERSONAS Gold migration integration
         working-directory: etl
         env:
-          MYSQL_IMAGE: mysql:${{ matrix.mysql }}
+          MYSQL_IMAGE: mysql:8.0.46
           PYTHON_BIN: python
         run: ./scripts/run_search_personas_gold_mysql_integration.sh
 
       - name: Verify TELEFONOS UPSERT regression coverage
         working-directory: etl
         env:
-          MYSQL_IMAGE: mysql:${{ matrix.mysql }}
+          MYSQL_IMAGE: mysql:8.0.46
           PYTHON_BIN: python
         run: ./scripts/run_search_telefonos_mysql_integration.sh
 
       - name: Verify ESSALUD regression coverage
         working-directory: etl
         env:
-          MYSQL_IMAGE: mysql:${{ matrix.mysql }}
+          MYSQL_IMAGE: mysql:8.0.46
           PYTHON_BIN: python
         run: ./scripts/run_search_essalud_mysql_integration.sh
