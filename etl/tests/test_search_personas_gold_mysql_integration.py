@@ -22,6 +22,7 @@ if os.getenv("KPDM_RUN_MYSQL_INTEGRATION") != "1":
 
 
 SQL_DIRECTORY = Path(__file__).resolve().parents[2] / "database" / "sql"
+PERSONAS_PUBLICATION_LOCK = "kpdm:search:211b99d4f10049ef0aef57e46bf9fb957b7d8ab3"
 
 
 @pytest.fixture()
@@ -171,6 +172,10 @@ def test_upgrade_and_backfill_require_exact_personas_lineage(mysql_database) -> 
     _execute_contract_sql(database, "056_add_search_person_index_parent_columns.sql")
     _execute_contract_sql(database, "056_add_search_person_index_parent_columns.sql")
     assert _gold_parent_columns(database) == ("padre", "madre")
+    assert _gold_parent_column_definitions(database) == {
+        "padre": ("varchar(500)", "YES", "utf8mb4", "utf8mb4_unicode_ci"),
+        "madre": ("varchar(500)", "YES", "utf8mb4", "utf8mb4_unicode_ci"),
+    }
 
     _seed_gold_person(
         database,
@@ -182,12 +187,20 @@ def test_upgrade_and_backfill_require_exact_personas_lineage(mysql_database) -> 
     _seed_silver_person(database, 44, "73809323", "LUCAS", "PAULA PACIZA")
     _seed_silver_person(database, 43, "73809323", "OTRO PADRE", "OTRA MADRE")
 
-    _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql")
+    diagnostics = _backfill_diagnostics(
+        _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql"),
+    )
 
     person = _gold_person(database, "73809323")
     assert person["padre"] == "LUCAS"
     assert person["madre"] == "PAULA PACIZA"
     assert person["batch_id"] == 44
+    assert diagnostics == {
+        "publication_lock_acquired": 1,
+        "publication_lock_released": 1,
+        "gold_without_exact_silver_lineage": 0,
+        "rows_updated": 1,
+    }
 
 
 def test_backfill_aborts_without_exact_personas_lineage(mysql_database) -> None:
@@ -209,10 +222,93 @@ def test_backfill_aborts_without_exact_personas_lineage(mysql_database) -> None:
     )
     _seed_silver_person(database, 44, "73809323", "LUCAS", "PAULA PACIZA")
 
-    _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql")
+    with pytest.raises(pymysql.MySQLError) as exception_info:
+        _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql")
 
+    assert exception_info.value.args[0] == 30003
     assert _gold_person(database, "73809323")["padre"] == "PADRE ANTERIOR"
     assert _gold_person(database, "87654321")["madre"] == "MADRE SIN SILVER"
+    assert _is_personas_publication_lock_free(database)
+
+
+def test_backfill_aborts_when_personas_publication_lock_is_busy(mysql_database) -> None:
+    database, _ = mysql_database
+    _seed_active_source(database)
+    _seed_gold_person(
+        database,
+        documento="73809323",
+        batch_id=44,
+        padre="PADRE ANTERIOR",
+        madre="MADRE ANTERIOR",
+    )
+    _seed_silver_person(database, 44, "73809323", "LUCAS", "PAULA PACIZA")
+    lock_connection = _open_lock_connection(database)
+
+    try:
+        with lock_connection.cursor() as cursor:
+            cursor.execute("SELECT GET_LOCK(%s, 0) AS lock_acquired", (PERSONAS_PUBLICATION_LOCK,))
+            assert cursor.fetchone()["lock_acquired"] == 1
+
+        with pytest.raises(pymysql.MySQLError) as exception_info:
+            _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql")
+
+        assert exception_info.value.args[0] == 30002
+        assert _gold_person(database, "73809323")["padre"] == "PADRE ANTERIOR"
+    finally:
+        with lock_connection.cursor() as cursor:
+            cursor.execute("SELECT RELEASE_LOCK(%s) AS lock_released", (PERSONAS_PUBLICATION_LOCK,))
+            assert cursor.fetchone()["lock_released"] == 1
+        lock_connection.close()
+
+    assert _is_personas_publication_lock_free(database)
+
+
+def test_backfill_is_idempotent_preserves_updated_at_and_null_parent_values(mysql_database) -> None:
+    database, _ = mysql_database
+    _seed_active_source(database)
+    _seed_gold_person(
+        database,
+        documento="73809323",
+        batch_id=44,
+        padre="PADRE ANTERIOR",
+        madre="MADRE ANTERIOR",
+    )
+    _seed_silver_person(database, 44, "73809323", None, None)
+    updated_at_before = _gold_person(database, "73809323")["updated_at"]
+
+    first_diagnostics = _backfill_diagnostics(
+        _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql"),
+    )
+    first_person = _gold_person(database, "73809323")
+    second_diagnostics = _backfill_diagnostics(
+        _execute_contract_sql(database, "057_backfill_search_person_index_parents.sql"),
+    )
+    second_person = _gold_person(database, "73809323")
+
+    assert first_diagnostics["rows_updated"] == 1
+    assert second_diagnostics["rows_updated"] == 0
+    assert first_person["padre"] is None
+    assert first_person["madre"] is None
+    assert first_person["updated_at"] == updated_at_before
+    assert second_person == first_person
+
+
+def test_upgrade_aborts_before_ddl_when_existing_parent_column_is_incompatible(mysql_database) -> None:
+    database, _ = mysql_database
+    gold = database.settings.gold_database
+
+    _execute(database, f"ALTER TABLE `{gold}`.`search_person_index` DROP COLUMN madre")
+    _execute(
+        database,
+        f"ALTER TABLE `{gold}`.`search_person_index` MODIFY COLUMN padre VARCHAR(255) NULL",
+    )
+
+    with pytest.raises(pymysql.MySQLError) as exception_info:
+        _execute_contract_sql(database, "056_add_search_person_index_parent_columns.sql")
+
+    assert exception_info.value.args[0] == 30010
+    assert _gold_parent_columns(database) == ("padre",)
+    assert _gold_parent_column_definitions(database)["padre"][0] == "varchar(255)"
 
 
 def _create_supporting_schema(database: MySqlDatabase) -> None:
@@ -350,8 +446,8 @@ def _seed_silver_person(
     database: MySqlDatabase,
     batch_id: int,
     documento: str,
-    padre: str,
-    madre: str,
+    padre: str | None,
+    madre: str | None,
     *,
     source_raw_id: int = 1,
 ) -> None:
@@ -374,8 +470,8 @@ def _seed_gold_person(
     *,
     documento: str,
     batch_id: int,
-    padre: str,
-    madre: str,
+    padre: str | None,
+    madre: str | None,
 ) -> None:
     gold = database.settings.gold_database
     _execute(
@@ -458,7 +554,79 @@ def _gold_parent_columns(database: MySqlDatabase) -> tuple[str, ...]:
         return tuple(str(row["column_name"]) for row in cursor.fetchall())
 
 
-def _execute_contract_sql(database: MySqlDatabase, filename: str) -> None:
+def _gold_parent_column_definitions(
+    database: MySqlDatabase,
+) -> dict[str, tuple[str, str, str | None, str | None]]:
+    gold = database.settings.gold_database
+    with database.connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT column_name, column_type, is_nullable, character_set_name, collation_name
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name = 'search_person_index'
+                  AND column_name IN ('padre', 'madre')
+                ORDER BY ordinal_position""",
+            (gold,),
+        )
+        rows = cursor.fetchall()
+
+    return {
+        str(row["column_name"]): (
+            str(row["column_type"]),
+            str(row["is_nullable"]),
+            None if row["character_set_name"] is None else str(row["character_set_name"]),
+            None if row["collation_name"] is None else str(row["collation_name"]),
+        )
+        for row in rows
+    }
+
+
+def _is_personas_publication_lock_free(database: MySqlDatabase) -> bool:
+    with database.connection.cursor() as cursor:
+        cursor.execute("SELECT IS_FREE_LOCK(%s) AS lock_is_free", (PERSONAS_PUBLICATION_LOCK,))
+        row = cursor.fetchone()
+
+    assert row is not None
+
+    return row["lock_is_free"] == 1
+
+
+def _open_lock_connection(database: MySqlDatabase) -> pymysql.connections.Connection:
+    return pymysql.connect(
+        host=database.settings.db_host,
+        port=database.settings.db_port,
+        user=database.settings.db_username,
+        password=database.settings.db_password,
+        database=database.settings.gold_database,
+        charset="utf8mb4",
+        autocommit=True,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def _backfill_diagnostics(
+    result_sets: list[list[dict[str, object]]],
+) -> dict[str, int]:
+    for result_set in reversed(result_sets):
+        if result_set and "rows_updated" in result_set[0]:
+            return {
+                key: int(value)
+                for key, value in result_set[0].items()
+                if key in {
+                    "publication_lock_acquired",
+                    "publication_lock_released",
+                    "gold_without_exact_silver_lineage",
+                    "rows_updated",
+                }
+            }
+
+    raise AssertionError("El backfill no devolvió sus diagnósticos esperados.")
+
+
+def _execute_contract_sql(
+    database: MySqlDatabase,
+    filename: str,
+) -> list[list[dict[str, object]]]:
     sql = (SQL_DIRECTORY / filename).read_text(encoding="utf-8")
     sql = sql.replace("`kp_control`", f"`{database.settings.control_database}`")
     sql = sql.replace("`kp_silver`", f"`{database.settings.silver_database}`")
@@ -466,16 +634,55 @@ def _execute_contract_sql(database: MySqlDatabase, filename: str) -> None:
     sql = sql.replace("'kp_control'", f"'{database.settings.control_database}'")
     sql = sql.replace("'kp_silver'", f"'{database.settings.silver_database}'")
     sql = sql.replace("'kp_gold'", f"'{database.settings.gold_database}'")
-    statements = (
-        "\n".join(
-            line for line in statement.splitlines() if not line.lstrip().startswith("--")
-        ).strip()
-        for statement in sql.split(";")
-    )
+    result_sets: list[list[dict[str, object]]] = []
+
     with database.connection.cursor() as cursor:
-        for statement in statements:
+        for statement in _split_sql_statements(sql):
+            cursor.execute(statement)
+
+            if cursor.description is not None:
+                result_sets.append(list(cursor.fetchall()))
+
+            while cursor.nextset():
+                if cursor.description is not None:
+                    result_sets.append(list(cursor.fetchall()))
+
+    return result_sets
+
+
+def _split_sql_statements(sql: str) -> tuple[str, ...]:
+    delimiter = ";"
+    statements: list[str] = []
+    current_lines: list[str] = []
+
+    for line in sql.splitlines():
+        stripped = line.strip()
+
+        if stripped.upper().startswith("DELIMITER "):
+            if _sql_content(current_lines):
+                raise AssertionError("DELIMITER no puede aparecer dentro de una sentencia SQL.")
+            delimiter = stripped.split(maxsplit=1)[1]
+            continue
+
+        current_lines.append(line)
+        current_statement = "\n".join(current_lines).rstrip()
+
+        if current_statement.endswith(delimiter):
+            statement = current_statement[: -len(delimiter)].strip()
             if statement:
-                cursor.execute(statement)
+                statements.append(statement)
+            current_lines = []
+
+    if _sql_content(current_lines):
+        raise AssertionError("El script SQL terminó sin su delimitador final.")
+
+    return tuple(statements)
+
+
+def _sql_content(lines: list[str]) -> str:
+    return "\n".join(
+        line for line in lines if not line.lstrip().startswith("--")
+    ).strip()
 
 
 def _execute(database: MySqlDatabase, sql: str, values: tuple[object, ...] = ()) -> None:
