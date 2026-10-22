@@ -1135,10 +1135,10 @@ class MySqlDatabase:
             INSERT INTO `{self.settings.gold_database}`.`search_person_index`
                 (`documento`, `tipo_documento`, `nombre_completo`, `paterno`, `materno`,
                  `nombres`, `fecha_nacimiento`, `sexo`, `estado_civil`, `direccion_origen`,
-                 `source_code`, `batch_id`, `updated_at`)
+                 `padre`, `madre`, `source_code`, `batch_id`, `updated_at`)
             SELECT documento, 'DNI', nombre_completo, paterno, materno, nombres,
                    fecha_nacimiento, sexo, estado_civil, direccion_origen,
-                   source_code, batch_id, %s
+                   padre, madre, source_code, batch_id, %s
             FROM `{self.settings.silver_database}`.`search_personas`
             WHERE batch_id = %s
         """
@@ -1154,6 +1154,8 @@ class MySqlDatabase:
                     sexo = VALUES(sexo),
                     estado_civil = VALUES(estado_civil),
                     direccion_origen = VALUES(direccion_origen),
+                    padre = VALUES(padre),
+                    madre = VALUES(madre),
                     source_code = VALUES(source_code),
                     batch_id = VALUES(batch_id),
                     updated_at = VALUES(updated_at)
