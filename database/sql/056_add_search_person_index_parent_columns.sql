@@ -86,7 +86,7 @@ BEGIN
     IF add_clauses <> '' THEN
         SET mysql_major = CAST(SUBSTRING_INDEX(VERSION(), '.', 1) AS UNSIGNED);
         SET mysql_minor = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(VERSION(), '.', 2), '.', -1) AS UNSIGNED);
-        SET mysql_patch = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(VERSION(), '.', 3), '.', -1) AS UNSIGNED);
+        SET mysql_patch = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(VERSION(), '.', 3), '.', -1), '-', 1) AS UNSIGNED);
 
         IF mysql_major > 8
            OR (mysql_major = 8 AND (mysql_minor > 0 OR (mysql_minor = 0 AND mysql_patch >= 29))) THEN

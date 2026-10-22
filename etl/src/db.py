@@ -1081,7 +1081,7 @@ class MySqlDatabase:
 
     @staticmethod
     def _search_scope_integrity_predicates(dataset_code: str) -> tuple[str, str]:
-        if dataset_code == "LABORAL_ESSALUD":
+        if dataset_code in {"LABORAL_ESSALUD", "SBS_DETALLE"}:
             return (
                 "scope.documento = (CONVERT(silver.documento USING utf8mb4) "
                 "COLLATE utf8mb4_unicode_ci)",

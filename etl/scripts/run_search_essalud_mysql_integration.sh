@@ -30,9 +30,9 @@ docker run --detach --rm \
 
 for _ in $(seq 1 90); do
     if docker exec --env MYSQL_PWD="${mysql_password}" "${container_name}" \
-        mysql --user=kpdm_test --database=kpdm_bootstrap --execute="SELECT 1" >/dev/null 2>&1; then
+        mysql --protocol=TCP --host=127.0.0.1 --port=3306 --user=kpdm_test --database=kpdm_bootstrap --execute="SELECT 1" >/dev/null 2>&1; then
         docker exec --env MYSQL_PWD="${mysql_password}" "${container_name}" \
-            mysql --user=root --execute="GRANT ALL PRIVILEGES ON *.* TO 'kpdm_test'@'%'; FLUSH PRIVILEGES;"
+            mysql --protocol=TCP --host=127.0.0.1 --port=3306 --user=root --execute="GRANT ALL PRIVILEGES ON *.* TO 'kpdm_test'@'%'; FLUSH PRIVILEGES;"
         published_port="$(docker port "${container_name}" 3306/tcp | tail -n 1 | sed 's/.*://')"
         cd "${etl_root}"
         KPDM_RUN_MYSQL_INTEGRATION=1 \
