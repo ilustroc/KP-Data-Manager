@@ -14,19 +14,17 @@ from src.domain.models import BatchRecord, ProcessingStats
 
 pytestmark = pytest.mark.mysql_integration
 
-if os.getenv("KPDM_RUN_MYSQL_INTEGRATION") != "1":
-    pytest.skip(
-        "Define KPDM_RUN_MYSQL_INTEGRATION=1 para ejecutar contra MySQL aislado.",
-        allow_module_level=True,
-    )
-
-
 SQL_DIRECTORY = Path(__file__).resolve().parents[2] / "database" / "sql"
 PERSONAS_PUBLICATION_LOCK = "kpdm:search:211b99d4f10049ef0aef57e46bf9fb957b7d8ab3"
 
 
 @pytest.fixture()
 def mysql_database(tmp_path: Path):
+    if os.getenv("KPDM_RUN_MYSQL_INTEGRATION") != "1":
+        pytest.skip(
+            "Define KPDM_RUN_MYSQL_INTEGRATION=1 para ejecutar contra MySQL aislado."
+        )
+
     suffix = uuid.uuid4().hex[:10]
     databases = {
         "control": f"kpdm_it_control_{suffix}",
@@ -309,6 +307,35 @@ def test_upgrade_aborts_before_ddl_when_existing_parent_column_is_incompatible(m
     assert exception_info.value.args[0] == 30010
     assert _gold_parent_columns(database) == ("padre",)
     assert _gold_parent_column_definitions(database)["padre"][0] == "varchar(255)"
+
+
+def test_contract_sql_parser_supports_delimiter_wrapped_procedures() -> None:
+    upgrade_statements = _split_sql_statements(
+        (SQL_DIRECTORY / "056_add_search_person_index_parent_columns.sql").read_text(
+            encoding="utf-8"
+        )
+    )
+    backfill_statements = _split_sql_statements(
+        (SQL_DIRECTORY / "057_backfill_search_person_index_parents.sql").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert len(upgrade_statements) == 5
+    assert len(backfill_statements) == 4
+    assert "DROP PROCEDURE IF EXISTS" in upgrade_statements[0]
+    assert "CREATE PROCEDURE" in upgrade_statements[1]
+    assert "SIGNAL SQLSTATE '45000'" in upgrade_statements[1]
+    assert "END IF;" in upgrade_statements[1]
+    assert "DROP PROCEDURE IF EXISTS" in backfill_statements[0]
+    assert "CREATE PROCEDURE" in backfill_statements[1]
+    assert "ROLLBACK;" in backfill_statements[1]
+    assert "RESIGNAL;" in backfill_statements[1]
+    assert "DROP PROCEDURE" in backfill_statements[-1]
+    assert all(
+        "DELIMITER" not in statement.upper()
+        for statement in (*upgrade_statements, *backfill_statements)
+    )
 
 
 def _create_supporting_schema(database: MySqlDatabase) -> None:
