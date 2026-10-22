@@ -501,6 +501,28 @@ def test_full_replace_uses_upsert_then_removes_only_stale_batch_rows(settings):
     assert "INSERT IGNORE" not in sql
 
 
+def test_personas_gold_publication_includes_and_updates_parents(settings):
+    connection = PublicationConnection()
+    database = database_with_connection(settings, connection)
+
+    database.publish_search(
+        batch("FULL_REPLACE"),
+        datetime(2026, 10, 22, 12, 0),
+        ProcessingStats(file_rows=1, inserted_rows=1, scope_count=1),
+    )
+
+    publication_sql = next(
+        sql
+        for sql in connection.publication_cursor.executed
+        if "INSERT INTO `kp_gold_test`.`search_person_index`" in sql
+    )
+
+    assert "`padre`, `madre`, `source_code`" in publication_sql
+    assert "padre, madre, source_code, batch_id" in publication_sql
+    assert "padre = VALUES(padre)" in publication_sql
+    assert "madre = VALUES(madre)" in publication_sql
+
+
 def test_gold_delete_metric_uses_affected_row_count(settings, caplog):
     connection = PublicationConnection()
     database = database_with_connection(settings, connection)

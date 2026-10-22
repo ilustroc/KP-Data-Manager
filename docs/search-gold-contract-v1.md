@@ -1,6 +1,6 @@
 # KP SEARCH GOLD CONTRACT
 
-Version: 1.0  
+Version: 1.1
 Dataset: PERSONAS
 
 ## Objeto publicado
@@ -23,6 +23,8 @@ Dataset: PERSONAS
 | sexo | VARCHAR(50) | Sí | Código textual de la fuente, sin interpretación semántica. |
 | estado_civil | VARCHAR(100) | Sí | Estado civil normalizado técnicamente. |
 | direccion_origen | TEXT | Sí | Dirección recibida en PERSONAS; no sustituye al futuro dataset DIRECCIONES. |
+| padre | VARCHAR(500) | Sí | Nombre del padre normalizado desde Silver PERSONAS. |
+| madre | VARCHAR(500) | Sí | Nombre de la madre normalizado desde Silver PERSONAS. |
 | source_code | VARCHAR(64) ASCII | No | Procedencia empresarial estable autorizada. |
 | batch_id | BIGINT UNSIGNED | No | Batch Silver que publicó la versión operativa. |
 | updated_at | DATETIME | No | Fecha UTC de publicación en Gold. |
@@ -41,6 +43,7 @@ DM-F2 autoriza una sola fuente activa para PERSONAS. El publicador bloquea una s
 
 - `SCOPE_REPLACE`: dentro de una transacción, elimina de Gold exclusivamente los documentos del scope oficial del batch y los inserta desde Silver validado.
 - `FULL_REPLACE`: Silver del batch actúa como población validada. Dentro de una transacción se hace upsert de esa población y luego se eliminan únicamente filas Gold cuyo `batch_id` no es el batch actual. Así se evita dejar Gold vacío antes de insertar y se conserva atomicidad.
+- El upsert de PERSONAS actualiza también `padre` y `madre` desde la fila Silver del mismo batch. Un backfill histórico debe unir exactamente por `documento`, `batch_id` y `source_code`; no se admite inferir valores desde otros batches.
 - Bronze y Silver son históricos append-only/por batch y no se eliminan durante la publicación.
 - `kp_control`, `kp_silver` y `kp_gold` deben residir en la misma instancia MySQL y las tablas participantes deben ser InnoDB para que la transacción multi-schema sea atómica.
 
@@ -60,6 +63,8 @@ SELECT
     sexo,
     estado_civil,
     direccion_origen,
+    padre,
+    madre,
     source_code,
     batch_id,
     updated_at

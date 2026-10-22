@@ -13,6 +13,8 @@ CREATE TABLE `kp_gold`.`search_person_index` (
     `sexo` VARCHAR(50) COLLATE utf8mb4_unicode_ci NULL,
     `estado_civil` VARCHAR(100) COLLATE utf8mb4_unicode_ci NULL,
     `direccion_origen` TEXT COLLATE utf8mb4_unicode_ci NULL,
+    `padre` VARCHAR(500) COLLATE utf8mb4_unicode_ci NULL,
+    `madre` VARCHAR(500) COLLATE utf8mb4_unicode_ci NULL,
     `source_code` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     `batch_id` BIGINT UNSIGNED NOT NULL,
     `updated_at` DATETIME NOT NULL,
