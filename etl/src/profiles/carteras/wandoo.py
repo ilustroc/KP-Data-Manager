@@ -28,7 +28,10 @@ from ...domain.normalizers import (
     value_for_error,
 )
 from .base import BaseCarteraProfile
-from .contracts import wandoo_derived_account
+from .contracts import (
+    wandoo_derived_account,
+    wandoo_derived_loan_instance_identifier,
+)
 
 
 class WandooV1Profile(BaseCarteraProfile):
@@ -154,7 +157,11 @@ class WandooV1Profile(BaseCarteraProfile):
             tipo_documento=None,
             cuenta=wandoo_derived_account(normalized["DNI"]),
             operacion=normalized["Numero de Prestamo"],
-            identificador_origen=None,
+            identificador_origen=wandoo_derived_loan_instance_identifier(
+                normalized["DNI"],
+                normalized["Numero de Prestamo"],
+                normalized["Fecha otorgamiento crédito"],
+            ),
             nombre_cliente=None,
             moneda=None,
             saldo_capital=normalized["Saldo deudor"],

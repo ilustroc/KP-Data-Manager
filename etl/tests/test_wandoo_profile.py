@@ -94,8 +94,79 @@ def test_identifiers_and_common_operation_mapping_are_preserved():
     assert record.operation.documento_cliente == "00003862"
     assert record.operation.cuenta == "000003862"
     assert record.operation.operacion == "7277-1292-001"
-    assert record.operation.identificador_origen is None
+    assert (
+        record.operation.identificador_origen
+        == "WAN1:6dae9d76c2ca5fd26795c65ef9e08ddf42047158b73678887ef1857daaaec7d5"
+    )
     assert record.operation.cosecha == "WANDOO_1"
+
+
+def test_derived_loan_identifier_is_stable_when_balance_or_days_late_change():
+    original, original_errors = normalize()
+    changed, changed_errors = normalize(
+        **{
+            "Saldo deudor": "999.99",
+            "Días de mora": 365,
+        }
+    )
+
+    assert original_errors == changed_errors == []
+    assert original is not None and changed is not None
+    assert original.operation.identificador_origen == changed.operation.identificador_origen
+
+
+def test_derived_loan_identifier_changes_for_different_grant_dates_or_documents():
+    original, original_errors = normalize()
+    other_date, other_date_errors = normalize(
+        **{"Fecha otorgamiento crédito": date(2025, 9, 6)}
+    )
+    other_document, other_document_errors = normalize(**{"DNI": "00003863"})
+
+    assert original_errors == other_date_errors == other_document_errors == []
+    assert original is not None and other_date is not None and other_document is not None
+    assert original.operation.identificador_origen != other_date.operation.identificador_origen
+    assert original.operation.identificador_origen != other_document.operation.identificador_origen
+
+
+def test_equal_wandoo_loan_identity_keeps_independent_rows_and_same_reference():
+    first, first_errors = normalize()
+    duplicate_source = source_row()
+    second, second_errors = WandooV1Profile().normalize(
+        SourceRow(number=3, values=duplicate_source.values),
+        batch_id=77,
+        source_file="wandoo_sintetico.xlsx",
+        ingested_at=FIXED_UTC,
+        error_value_max_length=100,
+    )
+
+    assert first_errors == second_errors == []
+    assert first is not None and second is not None
+    assert first.source_row == 2
+    assert second.source_row == 3
+    assert first.operation.identificador_origen == second.operation.identificador_origen
+
+
+def test_derived_loan_identifier_is_null_without_grant_date():
+    record, errors = normalize(**{"Fecha otorgamiento crédito": None})
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.identificador_origen is None
+
+
+def test_derived_loan_identifier_is_ascii_and_fits_common_column():
+    record, errors = normalize(
+        **{
+            "DNI": "D" * 100,
+            "Numero de Prestamo": "P" * 100,
+        }
+    )
+
+    assert errors == []
+    assert record is not None
+    assert record.operation.identificador_origen is not None
+    assert record.operation.identificador_origen.isascii()
+    assert len(record.operation.identificador_origen) <= 100
 
 
 def test_debtor_balance_maps_to_capital_debt_and_detail_without_double_counting():
