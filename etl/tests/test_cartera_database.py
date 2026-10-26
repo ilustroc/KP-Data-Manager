@@ -30,6 +30,7 @@ class RecordingCursor:
     def __init__(self, *, fail_table: str | None = None) -> None:
         self.fail_table = fail_table
         self.last_sql = ""
+        self.last_values: tuple[object, ...] = ()
         self.executed_many: list[tuple[str, list[tuple[object, ...]]]] = []
 
     def __enter__(self):
@@ -46,6 +47,7 @@ class RecordingCursor:
 
     def execute(self, sql: str, values) -> None:
         self.last_sql = sql
+        self.last_values = tuple(values)
 
     def fetchall(self):
         if (
@@ -54,9 +56,15 @@ class RecordingCursor:
             or "raw_cartera_confianza" in self.last_sql
             or "raw_cartera_wandoo" in self.last_sql
         ):
-            return [{"raw_id": 77, "source_row": 2}]
+            return [
+                {"raw_id": 77 + index, "source_row": source_row}
+                for index, source_row in enumerate(self.last_values[1:])
+            ]
         if "cartera_operaciones" in self.last_sql:
-            return [{"id": 88, "source_raw_id": 77}]
+            return [
+                {"id": 88 + index, "source_raw_id": source_raw_id}
+                for index, source_raw_id in enumerate(self.last_values[1:])
+            ]
         return []
 
 
@@ -159,24 +167,30 @@ def confianza_record():
     return record
 
 
-def wandoo_record():
+def wandoo_record(
+    *,
+    source_row: int = 2,
+    saldo_deudor: str = "337.55",
+    dias_mora: str = "18",
+):
     values = {column: CellValue(None) for column in WANDOO_SOURCE_COLUMNS}
     values.update(
         {
             "DNI": CellValue("00003862"),
             "Numero de Prestamo": CellValue("7277-1292-001"),
-            "Saldo deudor": CellValue("337.55"),
+            "Saldo deudor": CellValue(saldo_deudor),
             "Departamento": CellValue("Loreto"),
             "Provincia": CellValue("Maynas"),
             "Distrito": CellValue("Iquitos"),
-            "Días de mora": CellValue("18"),
+            "Días de mora": CellValue(dias_mora),
             "Producto crediticio": CellValue("Micropréstamo"),
             "Estado Cobranza Actual": CellValue("Prejudicial externa"),
+            "Fecha otorgamiento crédito": CellValue(date(2025, 9, 5)),
             "Cosecha": CellValue("WANDOO_1"),
         }
     )
     record, errors = WandooV1Profile().normalize(
-        SourceRow(2, values),
+        SourceRow(source_row, values),
         batch_id=77,
         source_file="wandoo.xlsx",
         ingested_at=datetime(2026, 10, 13, 15, 0, 0),
@@ -476,6 +490,7 @@ def test_wandoo_chunk_persists_bronze_common_address_and_detail_in_one_transacti
     assert operation_rows[0][2] == "00003862"
     assert operation_rows[0][4] == "000003862"
     assert operation_rows[0][5] == "7277-1292-001"
+    assert operation_rows[0][6] == wandoo_record().operation.identificador_origen
     assert operation_rows[0][8] is None
     assert operation_rows[0][9] == Decimal("337.55")
     assert operation_rows[0][10] == Decimal("337.55")
@@ -485,6 +500,31 @@ def test_wandoo_chunk_persists_bronze_common_address_and_detail_in_one_transacti
     assert detail_rows[0][4] == Decimal("337.55")
     assert operation_rows[0][9] == operation_rows[0][10] == detail_rows[0][4]
     assert detail_rows[0][8] == 18
+
+
+def test_wandoo_equal_loan_instances_keep_distinct_bronze_and_silver_rows(settings):
+    connection = RecordingConnection()
+    database = database_with_connection(settings, connection)
+    first = wandoo_record()
+    second = wandoo_record(source_row=3, saldo_deudor="500.00", dias_mora="19")
+
+    database.insert_cartera_chunk([first, second], [])
+
+    statements = {sql: rows for sql, rows in connection.recording_cursor.executed_many}
+    raw_rows = next(rows for sql, rows in statements.items() if "raw_cartera_wandoo" in sql)
+    operation_rows = next(
+        rows for sql, rows in statements.items() if "cartera_operaciones" in sql
+    )
+
+    assert connection.committed and not connection.rolled_back
+    assert [row[20] for row in raw_rows] == [2, 3]
+    assert [row[27] for row in operation_rows] == [77, 78]
+    assert [row[6] for row in operation_rows] == [
+        first.operation.identificador_origen,
+        second.operation.identificador_origen,
+    ]
+    assert operation_rows[0][6] == operation_rows[1][6]
+    assert [row[9] for row in operation_rows] == [Decimal("337.55"), Decimal("500.00")]
 
 
 def test_wandoo_chunk_rolls_back_when_detail_insert_fails(settings):

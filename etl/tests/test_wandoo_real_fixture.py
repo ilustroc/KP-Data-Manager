@@ -57,6 +57,20 @@ def test_real_wandoo_sample_matches_v1_contract_without_persistence():
     assert all(record.operation.interes is None for record in records)
     assert all(record.operation.mora is None for record in records)
     assert all(record.operation.cosecha == "WANDOO_1" for record in records)
+    assert all(
+        (record.operation.identificador_origen is None)
+        == (record.detail.fecha_otorgamiento_credito is None)
+        for record in records
+    )
+    assert all(
+        record.operation.identificador_origen is None
+        or (
+            record.operation.identificador_origen.startswith("WAN1:")
+            and record.operation.identificador_origen.isascii()
+            and len(record.operation.identificador_origen) <= 100
+        )
+        for record in records
+    )
     assert all(record.contacts == () for record in records)
     assert all(len(record.addresses) == 1 for record in records)
     assert all(record.operation.fecha_desembolso is not None for record in records)
