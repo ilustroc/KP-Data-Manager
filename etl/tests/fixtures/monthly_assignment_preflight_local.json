@@ -1,0 +1,27 @@
+{
+  "tables": [
+    {"schema": "kp_control", "name": "import_batch", "engine": "InnoDB", "collation": "utf8mb4_unicode_ci"},
+    {"schema": "kp_silver", "name": "cartera_operaciones", "engine": "InnoDB", "collation": "utf8mb4_unicode_ci"},
+    {"schema": "kp_silver", "name": "search_personas", "engine": "InnoDB", "collation": "utf8mb4_unicode_ci"}
+  ],
+  "harvests": [],
+  "zones": [],
+  "aliases": [],
+  "currency_policies": [],
+  "batches": [
+    {"batch_id": 7, "entidad": "BBVA", "tipo": "CARTERA", "dataset_code": null, "source_code": null, "refresh_mode": null, "estado": "COMPLETADO", "published_at": null, "rows_published": null},
+    {"batch_id": 14, "entidad": "CAJA_AREQUIPA", "tipo": "CARTERA", "dataset_code": null, "source_code": null, "refresh_mode": null, "estado": "COMPLETADO", "published_at": null, "rows_published": null},
+    {"batch_id": 21, "entidad": "COMPARTAMOS", "tipo": "CARTERA", "dataset_code": null, "source_code": null, "refresh_mode": null, "estado": "COMPLETADO", "published_at": null, "rows_published": null},
+    {"batch_id": 26, "entidad": "CONFIANZA", "tipo": "CARTERA", "dataset_code": null, "source_code": null, "refresh_mode": null, "estado": "COMPLETADO", "published_at": null, "rows_published": null},
+    {"batch_id": 29, "entidad": "WANDOO", "tipo": "CARTERA", "dataset_code": null, "source_code": null, "refresh_mode": null, "estado": "COMPLETADO", "published_at": null, "rows_published": null},
+    {"batch_id": 44, "entidad": null, "tipo": "SEARCH", "dataset_code": "PERSONAS", "source_code": "BASE_PERSONAS", "refresh_mode": "SCOPE_REPLACE", "estado": "COMPLETADO", "published_at": "2026-10-20T16:34:16", "rows_published": 49872}
+  ],
+  "aggregates": [
+    {"entidad": "BBVA", "batch_id": 7, "cosecha": "BBVA1", "moneda": "PEN", "operations": 2, "documents": 2, "capital": "100.00", "debt_total": null},
+    {"entidad": "CAJA_AREQUIPA", "batch_id": 14, "cosecha": "CAJAAQP3", "moneda": "PEN", "operations": 4, "documents": 1, "capital": "26601.79", "debt_total": "57052.31"},
+    {"entidad": "COMPARTAMOS", "batch_id": 21, "cosecha": "COMPARTAMOS_1", "moneda": "PEN", "operations": 1, "documents": 1, "capital": "50.00", "debt_total": "55.00"},
+    {"entidad": "CONFIANZA", "batch_id": 26, "cosecha": "CONFIANZA 5", "moneda": "PEN", "operations": 1, "documents": 1, "capital": "75.00", "debt_total": "90.00"},
+    {"entidad": "WANDOO", "batch_id": 29, "cosecha": "WANDOO_1", "moneda": "SIN_MONEDA", "operations": 13044, "documents": 13042, "capital": "6615373.31", "debt_total": "6615373.31"}
+  ],
+  "duplicates": []
+}

@@ -1780,6 +1780,18 @@ class MySqlDatabase:
         self._transaction_active = True
 
     @contextmanager
+    def transaction(self):
+        """Run a caller-owned unit of work with the ETL rollback safeguards."""
+        self._begin_transaction()
+        try:
+            yield
+        except Exception:
+            self._rollback_transaction_safely()
+            raise
+        else:
+            self._commit_transaction()
+
+    @contextmanager
     def _measure(
         self,
         metrics: SearchMetrics | None,
