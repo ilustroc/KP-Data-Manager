@@ -218,7 +218,7 @@ class PersistenceCursor:
     def fetchall(self):
         if "information_schema.tables" in self.last_sql:
             return [
-                {"table_schema": schema, "table_name": table}
+                {"source_schema": schema, "source_table": table}
                 for schema, table in zip(self.last_values[::2], self.last_values[1::2], strict=True)
             ]
         if "assignment_client_id, cadena" in self.last_sql:
