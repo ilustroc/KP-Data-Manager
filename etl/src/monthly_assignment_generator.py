@@ -395,12 +395,12 @@ class MySqlMonthlyAssignmentRepository:
         )
         placeholders = ", ".join(["(%s, %s)"] * len(expected))
         cursor.execute(
-            f"""SELECT table_schema, table_name
+            f"""SELECT TABLE_SCHEMA AS source_schema, TABLE_NAME AS source_table
                 FROM information_schema.tables
                 WHERE (table_schema, table_name) IN ({placeholders})""",
             tuple(value for item in expected for value in item),
         )
-        found = {(str(row["table_schema"]), str(row["table_name"])) for row in cursor.fetchall()}
+        found = {(str(row["source_schema"]), str(row["source_table"])) for row in cursor.fetchall()}
         missing = sorted(set(expected) - found)
         if missing:
             raise ValueError(
